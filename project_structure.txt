@@ -1,0 +1,46 @@
+midi-gpt/
+│
+├── configs/
+│   ├── base.yaml
+│   ├── remi.yaml
+│   ├── octuple.yaml
+│
+├── data/
+│   ├── raw/
+│   ├── processed_midis/
+│   ├── tokens/
+│   │   ├── remi/
+│   │   └── octuple/
+│
+├── src/
+│   ├── data/
+│   │   ├── preprocess.py
+│   │   ├── tokenize.py
+│   │   ├── dataset.py
+│   │
+│   ├── models/
+│   │   ├── remi_transformer.py
+│   │   ├── octuple_transformer.py
+│   │   ├── positional_encoding.py
+|   |   ├── utils.py
+│   │
+│   ├── training/
+│   │   ├── trainer.py
+│   │   ├── loss.py
+│   │
+│   ├── generation/
+│   │   ├── generate.py
+│   │
+│   ├── utils/
+│   │   ├── midi_utils.py
+│   │   ├── logging.py
+│   │
+│   └── main.py
+│
+├── scripts/
+│   ├── preprocess.sh
+│   ├── tokenize.sh
+│   ├── train.sh
+│
+├── requirements.txt
+├── README.md

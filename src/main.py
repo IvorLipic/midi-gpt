@@ -1,4 +1,4 @@
-import torch
+﻿import torch
 from torch.utils.data import DataLoader
 
 from src.data.dataset import MidiDataset
@@ -8,15 +8,16 @@ from src.models.octuple_transformer import OctupleTransformerLM
 from src.training.trainer import train_epoch
 from src.training.loss import compute_octuple_loss, compute_remi_loss
 from src.utils.logging import init_wandb, log
+from src.utils.checkpoint import save_checkpoint
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def main():
 
     config = {
-        "batch_size": 8,
-        "seq_len": 256,
-        "epochs": 50,
+        "batch_size": 64,
+        "seq_len": None,
+        "epochs": 3,
         "lr": 1e-4,
         "mode": "remi"
     }
@@ -25,10 +26,15 @@ def main():
 
     tokenizer = get_tokenizer(config["mode"])
 
-    dataset = MidiDataset("data/tokens/" + config["mode"], seq_len=config["seq_len"])
+    token_folder = "data/tokens/" + config["mode"] + "_8bar"
+    dataset = MidiDataset(token_folder, seq_len=None, mode=config["mode"], max_seq_len=512)
+
+    config["seq_len"] = dataset.seq_len
+    print(f"Using seq_len={config['seq_len']}, dataset={len(dataset)} samples")
+
     loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=True)
 
-    print(tokenizer.vocab_size)
+    print(f"Vocab size: {tokenizer.vocab_size}, Batches per epoch: {len(loader)}")
 
     if config["mode"] == "remi":
         model = RemiTransformerLM(
@@ -46,12 +52,19 @@ def main():
         
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
+    best_loss = float("inf")
 
     for epoch in range(config["epochs"]):
         loss = train_epoch(model, loader, optimizer, criterion, DEVICE)
 
         print(f"Epoch {epoch}: {loss:.4f}")
         log({"epoch": epoch, "loss": loss})
+
+        save_checkpoint(model, optimizer, epoch, config, loss)
+
+        if loss < best_loss:
+            best_loss = loss
+            print(f"New best loss: {best_loss:.4f}")
 
 
 if __name__ == "__main__":

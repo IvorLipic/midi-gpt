@@ -1,13 +1,16 @@
-import torch
+﻿import torch
 import numpy as np
 from pathlib import Path
-import random
 
 class MidiDataset(torch.utils.data.Dataset):
-    def __init__(self, folder, seq_len=512, mode="remi"):
+    def __init__(self, folder, seq_len=None, mode="remi", max_seq_len=512):
         self.files = sorted(Path(folder).glob("*.npz"))
-        self.seq_len = seq_len
         self.mode = mode
+        self.max_seq_len = max_seq_len
+
+        if seq_len is None:
+            seq_len = get_max_seq_len(folder, mode, max_seq_len)
+        self.seq_len = seq_len
 
     def __len__(self):
         return len(self.files)
@@ -17,25 +20,27 @@ class MidiDataset(torch.utils.data.Dataset):
         tokens = data["tokens"]
         tokens = torch.from_numpy(tokens).long()
 
-        # REMI is (L,), Octuple is (L, F)
-        curr_len = tokens.shape[0]
+        if tokens.shape[0] > self.max_seq_len:
+            tokens = tokens[:self.max_seq_len]
 
-        # ---- HANDLE LONG SEQUENCES (RANDOM CROP) ---- CHANGE THIS!!!!
-        if curr_len > self.seq_len:
-            start = random.randint(0, curr_len - self.seq_len)
-            tokens = tokens[start : start + self.seq_len]
-
-        # ---- HANDLE SHORT SEQUENCES (PAD) ----
-        elif curr_len < self.seq_len:
-            padding_size = self.seq_len - curr_len
-            # F.pad(input, (left, right), value)
-            # Assuming 0 is your [PAD] token; replace with your actual pad_id
-            # F.pad handles multidimensional tensors correctly if we specify the last dim
-            # For (L, F), padding (0, 0, 0, pad_size) pads the length dim
+        if tokens.shape[0] < self.seq_len:
+            padding_size = self.seq_len - tokens.shape[0]
             if tokens.dim() == 1:
                 tokens = torch.nn.functional.pad(tokens, (0, padding_size), value=0)
             else:
-                # Pad the first dimension (Length), leave the second (Fields) alone
                 tokens = torch.nn.functional.pad(tokens, (0, 0, 0, padding_size), value=0)
 
         return tokens
+
+def get_max_seq_len(folder, mode="remi", max_seq_len=None):
+    files = sorted(Path(folder).glob("*.npz"))
+    max_len = 0
+    for f in files:
+        data = np.load(f)
+        length = data["tokens"].shape[0]
+        if length > max_len:
+            max_len = length
+    if max_seq_len is not None and max_len > max_seq_len:
+        max_len = max_seq_len
+    print(f"Max sequence length in {folder}: {max_len} ({len(files)} samples)")
+    return max_len

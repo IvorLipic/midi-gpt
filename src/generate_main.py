@@ -1,0 +1,101 @@
+﻿import sys
+import random
+import torch
+import numpy as np
+from pathlib import Path
+
+from src.data.tokenize import get_tokenizer
+from src.data.detokenize import detokenize
+from src.generation.generate import generate
+from src.utils.checkpoint import load_checkpoint
+from src.models.remi_transformer import RemiTransformerLM
+from src.models.octuple_transformer import OctupleTransformerLM
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def get_4_bar_prompt(tokens, tokenizer):
+    bar_token_id = tokenizer.vocab["Bar_None"]
+    bar_positions = (tokens == bar_token_id).nonzero(as_tuple=True)[0]
+
+    if len(bar_positions) >= 5:
+        return tokens[:bar_positions[4]]
+    elif len(bar_positions) >= 4:
+        return tokens[:bar_positions[3]]
+    return tokens
+
+def main(checkpoint_path=None, max_new_tokens=128, top_k=40, n_samples=1):
+    if checkpoint_path is None:
+        checkpoint_path = "src/checkpoints/best.pt"
+
+    if not Path(checkpoint_path).exists():
+        print(f"Checkpoint not found: {checkpoint_path}")
+        print("Run 'python -m src.main' first to train a model.")
+        sys.exit(1)
+
+    checkpoint = load_checkpoint(checkpoint_path, device=DEVICE)
+    config = checkpoint["config"]
+    mode = config["mode"]
+
+    tokenizer = get_tokenizer(mode)
+
+    if mode == "remi":
+        model = RemiTransformerLM(
+            vocab_size=tokenizer.vocab_size,
+            max_len=config["seq_len"],
+        ).to(DEVICE)
+    else:
+        vocab_sizes = [len(v) for v in tokenizer.vocab]
+        model = OctupleTransformerLM(
+            vocab_sizes_per_field=vocab_sizes,
+            max_len=config["seq_len"],
+        ).to(DEVICE)
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+
+    token_dir = Path("data/tokens") / mode
+    token_files = sorted(token_dir.glob("*.npz"))
+    if not token_files:
+        print(f"No token files found in {token_dir}")
+        sys.exit(1)
+
+    output_dir = Path("data/test")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    sample_files = random.sample(token_files, min(n_samples, len(token_files)))
+
+    for sample_path in sample_files:
+        data = np.load(sample_path)
+        tokens = torch.from_numpy(data["tokens"]).long()
+
+        if mode == "remi":
+            prompt = get_4_bar_prompt(tokens, tokenizer)
+        else:
+            bar_field = tokens[:, 0]
+            bar_mask = bar_field < 4
+            prompt = tokens[bar_mask]
+
+        print(f"Prompt length: {len(prompt)} tokens (from {sample_path.name})")
+
+        generated = generate(model, prompt, max_new_tokens, DEVICE, top_k=top_k)
+        print(f"Generated {len(generated)} tokens total")
+
+        stem = Path(sample_path).stem
+        out_path = output_dir / f"generated_{stem}_{mode}.mid"
+        detokenize(generated, tokenizer, out_path)
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate MIDI from checkpoint")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint (default: src/checkpoints/best.pt)")
+    parser.add_argument("--max-tokens", type=int, default=128, help="Max tokens to generate")
+    parser.add_argument("--top-k", type=int, default=40, help="Top-k sampling")
+    parser.add_argument("--n-samples", type=int, default=1, help="Number of samples to generate")
+    args = parser.parse_args()
+
+    main(
+        checkpoint_path=args.checkpoint,
+        max_new_tokens=args.max_tokens,
+        top_k=args.top_k,
+        n_samples=args.n_samples,
+    )

@@ -1,5 +1,0 @@
-- bar cropping (either in DataLoader or 8 bar loop preprocessing, or both)
-- check padded token id when running the tokenizer again -> tokenizer = get_tokenizer("octuple") print(tokenizer.pad_token_id)
-- train 4 -> 8 bar conditioned generation
-- add top-k, top-p and optionally KV-cache if generation is too slow
-- check oct vocab for 4 bar priming

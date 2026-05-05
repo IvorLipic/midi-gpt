@@ -1,8 +1,8 @@
-### Python
+﻿### Python
 # Byte-compiled files
 __pycache__/
 *.py[cod]
-*$py.class
+*.class
 
 # C extensions
 *.so
@@ -70,3 +70,7 @@ $RECYCLE.BIN/
 
 # W&B logs
 wandb/
+
+# Checkpoints
+src/checkpoints/*.pt
+!src/checkpoints/.gitkeep

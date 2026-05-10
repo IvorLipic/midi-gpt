@@ -15,10 +15,10 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def main():
 
     config = {
-        "batch_size": 64,
+        "batch_size": 32,
         "seq_len": None,
-        "epochs": 3,
-        "lr": 1e-4,
+        "epochs": 100,
+        "lr": 5e-4,
         "mode": "remi"
     }
 
@@ -27,7 +27,7 @@ def main():
     tokenizer = get_tokenizer(config["mode"])
 
     token_folder = "data/tokens/" + config["mode"] + "_8bar"
-    dataset = MidiDataset(token_folder, seq_len=None, mode=config["mode"], max_seq_len=512)
+    dataset = MidiDataset(token_folder, seq_len=None, mode=config["mode"], max_seq_len=config["seq_len"])
 
     config["seq_len"] = dataset.seq_len
     print(f"Using seq_len={config['seq_len']}, dataset={len(dataset)} samples")
@@ -60,7 +60,8 @@ def main():
         print(f"Epoch {epoch}: {loss:.4f}")
         log({"epoch": epoch, "loss": loss})
 
-        save_checkpoint(model, optimizer, epoch, config, loss)
+        if epoch % 10 == 0:
+            save_checkpoint(model, optimizer, epoch, config, loss)
 
         if loss < best_loss:
             best_loss = loss

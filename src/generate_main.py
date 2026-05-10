@@ -23,7 +23,7 @@ def get_4_bar_prompt(tokens, tokenizer):
         return tokens[:bar_positions[3]]
     return tokens
 
-def main(checkpoint_path=None, max_new_tokens=128, top_k=40, n_samples=1):
+def main(checkpoint_path=None, top_k=40, n_samples=1):
     if checkpoint_path is None:
         checkpoint_path = "src/checkpoints/best.pt"
 
@@ -62,40 +62,39 @@ def main(checkpoint_path=None, max_new_tokens=128, top_k=40, n_samples=1):
     output_dir = Path("data/test")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    sample_files = random.sample(token_files, min(n_samples, len(token_files)))
+    sample_path = random.choice(token_files)
+    data = np.load(sample_path)
+    tokens = torch.from_numpy(data["tokens"]).long()
 
-    for sample_path in sample_files:
-        data = np.load(sample_path)
-        tokens = torch.from_numpy(data["tokens"]).long()
+    if mode == "remi":
+        prompt = get_4_bar_prompt(tokens, tokenizer)
+    else:
+        bar_field = tokens[:, 0]
+        bar_mask = bar_field < 4
+        prompt = tokens[bar_mask]
 
-        if mode == "remi":
-            prompt = get_4_bar_prompt(tokens, tokenizer)
-        else:
-            bar_field = tokens[:, 0]
-            bar_mask = bar_field < 4
-            prompt = tokens[bar_mask]
+    max_new_tokens = len(prompt)
+    stem = Path(sample_path).stem
 
-        print(f"Prompt length: {len(prompt)} tokens (from {sample_path.name})")
+    for i in range(n_samples):
+        print(f"Sample {i}: prompt length {len(prompt)} tokens (from {sample_path.name}), generating {max_new_tokens} new tokens")
 
         generated = generate(model, prompt, max_new_tokens, DEVICE, top_k=top_k)
         print(f"Generated {len(generated)} tokens total")
 
-        stem = Path(sample_path).stem
-        out_path = output_dir / f"generated_{stem}_{mode}.mid"
-        detokenize(generated, tokenizer, out_path)
+        out_path = output_dir / f"generated_{stem}_{mode}_sample{i}.mid"
+        detokenize(generated, tokenizer, out_path, prompt_tokens=prompt)
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Generate MIDI from checkpoint")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint (default: src/checkpoints/best.pt)")
-    parser.add_argument("--max-tokens", type=int, default=128, help="Max tokens to generate")
-    parser.add_argument("--top-k", type=int, default=40, help="Top-k sampling")
+    parser.add_argument("--top-k", type=int, default=1, help="Top-k sampling")
     parser.add_argument("--n-samples", type=int, default=1, help="Number of samples to generate")
     args = parser.parse_args()
 
     main(
         checkpoint_path=args.checkpoint,
-        max_new_tokens=args.max_tokens,
         top_k=args.top_k,
         n_samples=args.n_samples,
     )

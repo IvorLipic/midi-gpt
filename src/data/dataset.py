@@ -3,7 +3,7 @@ import numpy as np
 from pathlib import Path
 
 class MidiDataset(torch.utils.data.Dataset):
-    def __init__(self, folder, seq_len=None, mode="remi", max_seq_len=512):
+    def __init__(self, folder, seq_len=None, mode="remi", max_seq_len=None):
         self.files = sorted(Path(folder).glob("*.npz"))
         self.mode = mode
         self.max_seq_len = max_seq_len
@@ -11,6 +11,9 @@ class MidiDataset(torch.utils.data.Dataset):
         if seq_len is None:
             seq_len = get_max_seq_len(folder, mode, max_seq_len)
         self.seq_len = seq_len
+
+        if max_seq_len is None:
+            self.max_seq_len = seq_len
 
     def __len__(self):
         return len(self.files)

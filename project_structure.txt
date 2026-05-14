@@ -1,21 +1,21 @@
 midi-gpt/
 │
-├── configs/
-│   ├── base.yaml
-│   ├── remi.yaml
-│   ├── octuple.yaml
 │
 ├── data/
-│   ├── raw/
-│   ├── processed_midis/
-│   ├── tokens/
+│   ├── GigaMIDI/...        # contains complete and filtered dataset
+│   ├── test/               # model generated midis    
+│   ├── tokens/             # pop909 tokens
 │   │   ├── remi/
-│   │   └── octuple/
+│   │   ├── octuple/
+│   │   ├── remi_8bar/
 │
 ├── src/
 │   ├── data/
-│   │   ├── preprocess.py
+│   │   ├── preprocess_pop909.py
 │   │   ├── tokenize.py
+│   │   ├── detokenize.py
+│   │   ├── gigamidi_loop_extractor.py
+│   │   ├── GigaMIDI_Metadata_Filtering.ipynb
 │   │   ├── dataset.py
 │   │
 │   ├── models/
@@ -32,15 +32,10 @@ midi-gpt/
 │   │   ├── generate.py
 │   │
 │   ├── utils/
-│   │   ├── midi_utils.py
+│   │   ├── checkpoint.py
 │   │   ├── logging.py
 │   │
-│   └── main.py
-│
-├── scripts/
-│   ├── preprocess.sh
-│   ├── tokenize.sh
-│   ├── train.sh
+│   ├── generate_main.py        # main generation script
+│   └── main.py                 # main training script
 │
 ├── requirements.txt
-├── README.md

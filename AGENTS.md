@@ -7,10 +7,10 @@ Two tokenization modes: **REMI** (single-token) and **Octuple** (multi-field per
 ## Pipeline & Commands
 Run from repo root. Python 3.13 confirmed.
 
-1. **Preprocess MIDIs** (POP909 → piano-only, 4/4, aligned, 64-bar truncated):
-   `python -m src.data.preprocess_pop909`
-   Output: `aligned_piano_tracks/`. Reads POP909 from `data/raw/` (not tracked; see `.gitignore`).
-   NOTE: Will require changes — tracks are truncated to 64 bars, not fixed 8-bar songs.
+1. **Preprocess MIDIs**
+   - `src/data/GigaMIDI_Metadata_Filtering.ipynb` — filters GigaMIDI metadata CSV to 8-bar loops, excludes drum-only/classical/jazz → `data/GigaMIDI/GigaMIDI-metadata-filtered-v1.csv`
+   - `src/data/gigamidi_loop_extractor.py` — extracts validated 8-bar loops from filtered metadata (parallel processing). Command: `python -m src.data.gigamidi_loop_extractor`. **Do NOT run** — long execution and a lot of data.
+   - `src/data/preprocess_pop909.py` — Legacy (different pipeline): POP909 dataset → piano-only, 4/4 only, aligned to tick 0, truncated to 64 bars. Tokens generated externally, currently in `data/tokens`, not runnable here.
 
 2. **Tokenize** preprocessed MIDIs → .npz files:
    `python -m src.data.tokenize --mode remi` (or `--mode octuple`)
@@ -31,7 +31,8 @@ Run from repo root. Python 3.13 confirmed.
    Output: `data/test/generated_{stem}_{mode}_sample{i}.mid`. Auto-generates `len(prompt)` tokens. `n_samples` generates multiple continuations from the same prompt file.
 
 ## Architecture
-- `src/data/preprocess_pop909.py` — POP909 → piano-only, 4/4 only, aligned to tick 0, truncated to 64 bars.
+- `src/data/preprocess_pop909.py` — POP909 dataset preprocessor (see Pipeline Step 1). Tokens generated externally, not runnable here.
+- `src/data/gigamidi_loop_extractor.py` — GigaMIDI preprocessor (see Pipeline Step 1). Reads filtered metadata CSV, validates 8-bar loops (32-beat ±0.5 duration, single TS with denominator=4, non-drum tracks, ≥10 notes), extracts to `data/GigaMIDI/extracted_loops_v1/{split}/{ts_type}/`. Runs in parallel via `mp.Pool`. Produces `manifest.csv`.
 - `src/data/tokenize.py` — REMI / Octuple tokenizer creation (miditok). Config hardcodes: no chords/rests/tempos/time-sigs, 16 ticks/beat, 32 velocities, no programs. Also has `rechunk_tokens()` for 8-bar slicing (CLI: `--slice-8bar`).
 - `src/data/dataset.py` — `MidiDataset`: one .npz file = one 8-bar sample. No random cropping. Pad token = 0. `seq_len` computed dynamically from data. Long sequences capped at `max_seq_len`.
 - `src/data/detokenize.py` — Converts generated tokens back to MIDI files using miditok. **Tokenizer config duplicated from tokenize.py — keep in sync.** Optional `prompt_tokens` param builds a 2-track Score (Generated + Prompt).
@@ -53,16 +54,11 @@ Run from repo root. Python 3.13 confirmed.
 - Checkpoints (.pt files) excluded from git; directory tracked via `.gitkeep`.
 
 ## Pending Work
-- Train, test, eval split
-- Implement eval metrics and log to W&B:
-  - Pitch histogram distance between 4-bar prompt and 4-bar continuation (muspy)
-  - Rhythm distance — Inter-Onset Interval distribution comparison
+- Train/test/eval split — integrate with GigaMIDI's existing train/test/validation split (`gigamidi_loop_extractor.py`)
+- Eval metrics logged to W&B: pitch histogram distance (muspy), IOI distribution (rhythm distance), IR/VMO
   - See [MGEval](https://github.com/RichardYang40148/mgeval) for implementations
-  - Additionally: Information Rate (IR) based on Variable Markov Oracle (VMO)
-- Add more data (GigaMIDI dataset)
-- Take loop detector from [gigamidi-dataset](https://github.com/metacreation-lab/gigamidi-dataset) to filter new dataset into 8-bar loops
 - Enforce bar token as first generated token (or keep 5th bar token from prompt as the first token in continuation)
-- Optionally: add top-p sampling and KV-cache
+- Optionally: top-p sampling and KV-cache
 
 ## Dependencies
-miditok==3.0.6.post1, numpy==2.4.4, symusic==0.6.0, torch==2.11.0, tqdm==4.67.1, wandb==0.26.1
+miditok==3.0.6.post1, numpy==2.4.4, symusic==0.6.0, torch==2.11.0, tqdm==4.67.1, wandb==0.26.1, pandas==2.2.3

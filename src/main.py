@@ -32,7 +32,13 @@ def main():
     config["seq_len"] = dataset.seq_len
     print(f"Using seq_len={config['seq_len']}, dataset={len(dataset)} samples")
 
-    loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=True)
+    loader = DataLoader(dataset, 
+                        batch_size=config["batch_size"], 
+                        shuffle=True, 
+                        pin_memory=True,
+                        num_workers=4,
+                        persistent_workers=True,
+                        prefetch_factor=2)
 
     print(f"Vocab size: {tokenizer.vocab_size}, Batches per epoch: {len(loader)}")
 
@@ -49,23 +55,25 @@ def main():
             max_len=config["seq_len"]
         ).to(DEVICE)
         criterion = compute_octuple_loss
+    
+    model = torch.compile(model, mode="max-autotune")
         
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"], fused=True)
     best_loss = float("inf")
 
-    for epoch in range(config["epochs"]):
-        loss = train_epoch(model, loader, optimizer, criterion, DEVICE)
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+        for epoch in range(config["epochs"]):
+            loss = train_epoch(model, loader, optimizer, criterion, DEVICE)
 
-        print(f"Epoch {epoch}: {loss:.4f}")
-        log({"epoch": epoch, "loss": loss})
+            print(f"Epoch {epoch}: {loss:.4f}")
+            log({"epoch": epoch, "loss": loss})
 
-        if epoch % 10 == 0:
-            save_checkpoint(model, optimizer, epoch, config, loss)
+            if epoch % 10 == 0:
+                save_checkpoint(model, optimizer, epoch, config, loss)
 
-        if loss < best_loss:
-            best_loss = loss
-            print(f"New best loss: {best_loss:.4f}")
+            if loss < best_loss:
+                best_loss = loss
+                print(f"New best loss: {best_loss:.4f}")
 
 
 if __name__ == "__main__":

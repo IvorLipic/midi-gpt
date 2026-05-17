@@ -5,10 +5,10 @@ class RemiTransformerLM(nn.Module):
     def __init__(
         self,
         vocab_size,
-        d_model=256,
-        n_layers=4,
-        n_heads=4,
-        dim_feedforward=512,
+        d_model=512,
+        n_layers=8,
+        n_heads=8,
+        dim_feedforward=2048,
         dropout=0.1,
         max_len=4096,
     ):
@@ -29,13 +29,13 @@ class RemiTransformerLM(nn.Module):
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
         self.lm_head = nn.Linear(d_model, vocab_size)
 
-    def forward(self, input_ids, attn_mask=None):
+    def forward(self, input_ids):
         """
         input_ids: (B, L) int64
-        attn_mask: (L, L) causal mask
+        is_causal: (L, L) causal mask
         """
         x = self.embed(input_ids) * (self.d_model ** 0.5)
         x = self.pos_enc(x)
-        x = self.encoder(x, mask=attn_mask)
+        x = self.encoder(x, is_causal=True)
         logits = self.lm_head(x)  # (B, L, vocab_size)
         return logits

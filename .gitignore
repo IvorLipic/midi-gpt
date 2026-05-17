@@ -68,6 +68,9 @@ $RECYCLE.BIN/
 # Dataset
 /data/
 
+# TeX stuff
+/thesis/
+
 # W&B logs
 wandb/
 

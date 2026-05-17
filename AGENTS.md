@@ -8,8 +8,12 @@ Two tokenization modes: **REMI** (single-token) and **Octuple** (multi-field per
 Run from repo root. Python 3.13 confirmed.
 
 1. **Preprocess MIDIs**
-   - `src/data/GigaMIDI_Metadata_Filtering.ipynb` — filters GigaMIDI metadata CSV to 8-bar loops, excludes drum-only/classical/jazz → `data/GigaMIDI/GigaMIDI-metadata-filtered-v1.csv`
+   - `src/data/GigaMIDI_Analysis_and_Filtering.ipynb` — filters GigaMIDI metadata CSV to 8-bar loops, excludes drum-only/classical/jazz → `data/GigaMIDI/GigaMIDI-metadata-filtered-v1.csv`
    - `src/data/gigamidi_loop_extractor.py` — extracts validated 8-bar loops from filtered metadata (parallel processing). Command: `python -m src.data.gigamidi_loop_extractor`. **Do NOT run** — long execution and a lot of data.
+   - `src/data/gigamidi_loop_filter.py` — computes 12 quality metrics on extracted loops and filters by threshold. **Do NOT run** — ~1.3M files, long execution.
+     - `python -m src.data.gigamidi_loop_filter --mode compute` — computes metrics, saves `enriched_manifest.csv`
+     - `python -m src.data.gigamidi_loop_filter --mode filter --filter empty_beat_rate::0.3 --filter scale_consistency:0.8:` — filters and copies to `data/GigaMIDI/filtered_loops_v1/{split}/4-4/`
+     - Metrics: `n_pitches_used`, `n_pitch_classes_used`, `pitch_range`, `empty_beat_rate`, `empty_bar_rate`, `polyphony`, `polyphony_rate`, `scale_consistency`, `pitch_entropy`, `pitch_class_entropy`, `groove_consistency_bar`, `groove_consistency_4bar`
    - `src/data/preprocess_pop909.py` — Legacy (different pipeline): POP909 dataset → piano-only, 4/4 only, aligned to tick 0, truncated to 64 bars. Tokens generated externally, currently in `data/tokens`, not runnable here.
 
 2. **Tokenize** preprocessed MIDIs → .npz files:
@@ -33,6 +37,7 @@ Run from repo root. Python 3.13 confirmed.
 ## Architecture
 - `src/data/preprocess_pop909.py` — POP909 dataset preprocessor (see Pipeline Step 1). Tokens generated externally, not runnable here.
 - `src/data/gigamidi_loop_extractor.py` — GigaMIDI preprocessor (see Pipeline Step 1). Reads filtered metadata CSV, validates 8-bar loops (32-beat ±0.5 duration, single TS with denominator=4, non-drum tracks, ≥10 notes), extracts to `data/GigaMIDI/extracted_loops_v1/{split}/{ts_type}/`. Runs in parallel via `mp.Pool`. Produces `manifest.csv`.
+- `src/data/gigamidi_loop_filter.py` — Computes 12 quality metrics (adapted from muspy) on extracted 4/4 loops. Two-phase: `compute` writes enriched CSV, `filter` applies thresholds and copies files to `data/GigaMIDI/filtered_loops_v1/{split}/4-4/`. Uses `mp.Pool` parallel processing.
 - `src/data/tokenize.py` — REMI / Octuple tokenizer creation (miditok). Config hardcodes: no chords/rests/tempos/time-sigs, 16 ticks/beat, 32 velocities, no programs. Also has `rechunk_tokens()` for 8-bar slicing (CLI: `--slice-8bar`).
 - `src/data/dataset.py` — `MidiDataset`: one .npz file = one 8-bar sample. No random cropping. Pad token = 0. `seq_len` computed dynamically from data. Long sequences capped at `max_seq_len`.
 - `src/data/detokenize.py` — Converts generated tokens back to MIDI files using miditok. **Tokenizer config duplicated from tokenize.py — keep in sync.** Optional `prompt_tokens` param builds a 2-track Score (Generated + Prompt).
@@ -54,11 +59,10 @@ Run from repo root. Python 3.13 confirmed.
 - Checkpoints (.pt files) excluded from git; directory tracked via `.gitkeep`.
 
 ## Pending Work
-- Train/test/eval split — integrate with GigaMIDI's existing train/test/validation split (`gigamidi_loop_extractor.py`)
 - Eval metrics logged to W&B: pitch histogram distance (muspy), IOI distribution (rhythm distance), IR/VMO
   - See [MGEval](https://github.com/RichardYang40148/mgeval) for implementations
 - Enforce bar token as first generated token (or keep 5th bar token from prompt as the first token in continuation)
 - Optionally: top-p sampling and KV-cache
 
 ## Dependencies
-miditok==3.0.6.post1, numpy==2.4.4, symusic==0.6.0, torch==2.11.0, tqdm==4.67.1, wandb==0.26.1, pandas==2.2.3
+miditok==3.0.6.post1, numpy==2.4.4, symusic==0.6.0, torch==2.11.0, tqdm==4.67.1, wandb==0.26.1, pandas==2.2.3, muspy==0.5.0

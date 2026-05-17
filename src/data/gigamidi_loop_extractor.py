@@ -1,6 +1,5 @@
 import os
 import ast
-import sys
 from typing import List, Dict, Any, Optional
 
 import pandas as pd
@@ -10,34 +9,13 @@ from symusic import Score, Track, Note, Tempo, TimeSignature
 import multiprocessing as mp
 from functools import partial
 
-from contextlib import contextmanager
+from src.data.utils import silence_cpp
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 METADATA = os.path.join(SCRIPT_DIR, "../../data/GigaMIDI/GigaMIDI-metadata-filtered-v1.csv")
 DATASET_ROOT = os.path.join(SCRIPT_DIR, "../../data/GigaMIDI")
 OUTPUT_ROOT = os.path.join(SCRIPT_DIR, "../../data/GigaMIDI/extracted_loops_v1")
 
-@contextmanager
-def silence_cpp():
-    """Context manager to redirect C-level stdout/stderr to /dev/null."""
-    # Save the original file descriptors
-    stdout_fd = 1
-    stderr_fd = 2
-    copy_stdout = os.dup(stdout_fd)
-    copy_stderr = os.dup(stderr_fd)
-    
-    try:
-        with open(os.devnull, 'wb') as devnull:
-            # Overwrite stdout/stderr with devnull at the OS level
-            os.dup2(devnull.fileno(), stdout_fd)
-            os.dup2(devnull.fileno(), stderr_fd)
-        yield
-    finally:
-        # Restore original descriptors
-        os.dup2(copy_stdout, stdout_fd)
-        os.dup2(copy_stderr, stderr_fd)
-        os.close(copy_stdout)
-        os.close(copy_stderr)
 
 # =========================
 # Utils

@@ -31,11 +31,12 @@ METRIC_COLUMNS = [
     "pitch_class_entropy",
     "groove_consistency_bar",
     "groove_consistency_4bar",
+    "is_identical_4bar_loop"
 ]
 
 
 # =========================
-# Note extraction helper
+# Helpers
 # =========================
 
 
@@ -58,6 +59,44 @@ def _extract_notes(score):
     ends = np.array([n[1] for n in notes], dtype=np.int64)
     pitches = np.array([n[2] for n in notes], dtype=np.int64)
     return times, ends, pitches
+
+def _extract_bar_events(times, ends, pitches, start, end):
+    """Extract sorted note events in [start, end) with relative timing."""
+    mask = (times >= start) & (times < end)
+
+    t = times[mask] - start
+    e = ends[mask] - start
+    p = pitches[mask]
+
+    # (onset, duration, pitch) is better than (onset, end, pitch)
+    events = list(zip(t.tolist(), (e - t).tolist(), p.tolist()))
+    return sorted(events)
+
+
+def is_identical_4bar_loop(times, ends, pitches, ticks_per_bar):
+    """Check if first 4 bars are EXACTLY identical to last 4 bars."""
+    split = 4 * ticks_per_bar
+
+    first = _extract_bar_events(times, ends, pitches, 0, split)
+    second = _extract_bar_events(times, ends, pitches, split, 2 * split)
+
+    return first == second
+
+def debug_check_identical_loop(midi_path):
+    score = Score(midi_path)
+
+    result = _extract_notes(score)
+    if result is None:
+        print("No notes found")
+        return
+
+    times, ends, pitches = result
+    ticks_per_bar = 4 * score.ticks_per_quarter
+
+    identical = is_identical_4bar_loop(times, ends, pitches, ticks_per_bar)
+
+    print(f"{midi_path}")
+    print(f"Identical 4-bar loop: {identical}")
 
 
 # =========================
@@ -295,6 +334,7 @@ def compute_metrics(midi_path: str) -> Optional[Dict[str, float]]:
     pitch_class_entropy_val = _pitch_class_entropy(pitches)
     groove_consistency_bar_val = _groove_consistency(times, ticks_per_bar, length)
     groove_consistency_4bar_val = _groove_consistency(times, ticks_per_4bar, length)
+    is_identical = is_identical_4bar_loop(times, ends, pitches, ticks_per_bar)
 
     return {
         "n_pitches_used": n_pitches,
@@ -309,6 +349,7 @@ def compute_metrics(midi_path: str) -> Optional[Dict[str, float]]:
         "pitch_class_entropy": pitch_class_entropy_val,
         "groove_consistency_bar": groove_consistency_bar_val,
         "groove_consistency_4bar": groove_consistency_4bar_val,
+        "is_identical_4bar_loop": float(is_identical)
     }
 
 
@@ -556,123 +597,15 @@ if __name__ == "__main__":
     main()
 
 '''
-# Pre-training Dataset
-python -m src.data.gigamidi_loop_filter --mode filter --enriched-csv ./data/GigaMIDI/filtered_loops_v1/enriched_manifest.csv --output-root ./data/GigaMIDI/filtered_loops_v1/pretrain --filter empty_bar_rate:0.0:0.0 --filter empty_beat_rate::0.4 --filter polyphony:1.0:5.5 --filter pitch_range:4.0:48.0 --filter n_pitches_used:4.0:35.0 --filter scale_consistency:0.80: --filter groove_consistency_bar:0.90:
+# Compute metrics (1245574 files)
+python -m src.data.gigamidi_loop_filter --mode compute --enriched-csv ./data/GigaMIDI/filtered_loops_v1/enriched_manifest.csv
 
-# SFT Monophonic Source
-python -m src.data.gigamidi_loop_filter --mode filter --enriched-csv ./data/GigaMIDI/filtered_loops_v1/ --output-root ./data/GigaMIDI/filtered_loops_v1/sft_mono --filter polyphony_rate:0.0:0.02 --filter polyphony:1.0:1.05 --filter scale_consistency:0.95: --filter empty_beat_rate::0.20
+# Pre-training Dataset (Filtered to 732258 files, train: 585013 files, test: 74145 files, validation: 73100 files)
+python -m src.data.gigamidi_loop_filter --mode filter --enriched-csv ./data/GigaMIDI/filtered_loops_v1/enriched_manifest.csv --output-root ./data/GigaMIDI/filtered_loops_v1/pretrain --filter empty_bar_rate:0.0:0.0 --filter empty_beat_rate::0.4 --filter polyphony:1.0:5.5 --filter pitch_range:4.0:48.0 --filter n_pitches_used:4.0:35.0 --filter scale_consistency:0.90: --filter groove_consistency_bar:0.90: --filter is_identical_4bar_loop:0:0
 
-# SFT Polyphonic Source
-python -m src.data.gigamidi_loop_filter --mode filter --enriched-csv ./data/GigaMIDI/filtered_loops_v1/ --output-root ./data/GigaMIDI/filtered_loops_v1/sft_poly --filter polyphony_rate:0.50:1.0 --filter polyphony:2.0:5.0 --filter scale_consistency:0.95: --filter empty_beat_rate::0.15
+# SFT Monophonic Source (Filtered to 338496 files, train: 270581 files, test: 34392 files, validation: 33523 files)
+python -m src.data.gigamidi_loop_filter --mode filter --enriched-csv ./data/GigaMIDI/filtered_loops_v1/enriched_manifest.csv --output-root ./data/GigaMIDI/filtered_loops_v1/sft_mono --filter empty_bar_rate:0.0:0.0 --filter empty_beat_rate::0.4 --filter polyphony:1.0:1.05 --filter pitch_range:4.0:48.0 --filter n_pitches_used:4.0:35.0 --filter scale_consistency:0.95: --filter groove_consistency_bar:0.90: --filter is_identical_4bar_loop:0:0 --filter polyphony_rate:0.0:0.02 
 
-
-Metric statistics:
-  n_pitches_used:
-    count: 1245574.0000
-    mean: 9.1331
-    std: 5.1190
-    min: 1.0000
-    25%: 6.0000
-    50%: 8.0000
-    75%: 11.0000
-    max: 128.0000
-  n_pitch_classes_used:
-    count: 1245574.0000
-    mean: 6.3221
-    std: 2.0501
-    min: 1.0000
-    25%: 5.0000
-    50%: 7.0000
-    75%: 7.0000
-    max: 12.0000
-  pitch_range:
-    count: 1245574.0000
-    mean: 16.1227
-    std: 9.4617
-    min: 0.0000
-    25%: 10.0000
-    50%: 14.0000
-    75%: 20.0000
-    max: 127.0000
-  empty_beat_rate:
-    count: 1245574.0000
-    mean: 0.0826
-    std: 0.1682
-    min: 0.0000
-    25%: 0.0000
-    50%: 0.0000
-    75%: 0.0909
-    max: 0.9688
-  empty_bar_rate:
-    count: 1245574.0000
-    mean: 0.0396
-    std: 0.1301
-    min: 0.0000
-    25%: 0.0000
-    50%: 0.0000
-    75%: 0.0000
-    max: 0.8750
-  polyphony:
-    count: 1245574.0000
-    mean: 1.6760
-    std: 1.0789
-    min: 1.0000
-    25%: 1.0000
-    50%: 1.0003
-    75%: 2.0079
-    max: 31.9829
-  polyphony_rate:
-    count: 1245574.0000
-    mean: 0.2609
-    std: 0.3627
-    min: 0.0000
-    25%: 0.0000
-    50%: 0.0002
-    75%: 0.5312
-    max: 1.0000
-  scale_consistency:
-    count: 1245574.0000
-    mean: 0.9670
-    std: 0.0606
-    min: 0.5833
-    25%: 0.9545
-    50%: 1.0000
-    75%: 1.0000
-    max: 1.0000
-  pitch_entropy:
-    count: 1245574.0000
-    mean: 2.6678
-    std: 0.7843
-    min: -0.0000
-    25%: 2.2147
-    50%: 2.7192
-    75%: 3.1790
-    max: 7.0000
-  pitch_class_entropy:
-    count: 1245574.0000
-    mean: 2.2924
-    std: 0.5711
-    min: -0.0000
-    25%: 2.0197
-    50%: 2.4211
-    75%: 2.6769
-    max: 3.5850
-  groove_consistency_bar:
-    count: 1245376.0000
-    mean: 0.9974
-    std: 0.0050
-    min: 0.5625
-    25%: 0.9974
-    50%: 0.9987
-    75%: 0.9995
-    max: 1.0000
-  groove_consistency_4bar:
-    count: 1242006.0000
-    mean: 0.9975
-    std: 0.0048
-    min: 0.5000
-    25%: 0.9974
-    50%: 0.9988
-    75%: 0.9996
-    max: 1.0000
+# SFT Polyphonic Source (Filtered to 151174 files, train: 120802 files, test: 15260 files, validation: 15112 files)
+python -m src.data.gigamidi_loop_filter --mode filter --enriched-csv ./data/GigaMIDI/filtered_loops_v1/enriched_manifest.csv --output-root ./data/GigaMIDI/filtered_loops_v1/sft_poly --filter empty_bar_rate:0.0:0.0 --filter empty_beat_rate::0.4 --filter polyphony:2.0:5.0 --filter pitch_range:4.0:48.0 --filter n_pitches_used:4.0:35.0 --filter scale_consistency:0.95: --filter groove_consistency_4bar:0.90: --filter is_identical_4bar_loop:0:0 --filter polyphony_rate:0.50:1.0
 '''

@@ -1,68 +1,62 @@
 ﻿# midi-gpt — Agent Guide
 
 ## Project
-GPT-style MIDI generator: takes a 4-bar prompt, generates a 4-bar continuation (8 bars total). Output MIDI has 2 tracks: "Generated" (continuation) and "Prompt" (prompt only).
+GPT-style MIDI generator: takes a 4-bar prompt, generates a 4-bar continuation (8 bars total). Output MIDI has 2 tracks: "Generated" and "Prompt".
 Two tokenization modes: **REMI** (single-token) and **Octuple** (multi-field per timestep).
+Data lives in `data/GigaMIDI/filtered_loops_v1/{pretrain|sft_mono|sft_poly}/{train|test|validation}/4-4/*.mid`.
 
 ## Pipeline & Commands
 Run from repo root. Python 3.13 confirmed.
 
-1. **Preprocess MIDIs**
-   - `src/data/GigaMIDI_Analysis_and_Filtering.ipynb` — filters GigaMIDI metadata CSV to 8-bar loops, excludes drum-only/classical/jazz → `data/GigaMIDI/GigaMIDI-metadata-filtered-v1.csv`
-   - `src/data/gigamidi_loop_extractor.py` — extracts validated 8-bar loops from filtered metadata (parallel processing). Command: `python -m src.data.gigamidi_loop_extractor`. **Do NOT run** — long execution and a lot of data.
-   - `src/data/gigamidi_loop_filter.py` — computes 12 quality metrics on extracted loops and filters by threshold. **Do NOT run** — ~1.3M files, long execution.
-     - `python -m src.data.gigamidi_loop_filter --mode compute` — computes metrics, saves `enriched_manifest.csv`
-     - `python -m src.data.gigamidi_loop_filter --mode filter --filter empty_beat_rate::0.3 --filter scale_consistency:0.8:` — filters and copies to `data/GigaMIDI/filtered_loops_v1/{split}/4-4/`
-     - Metrics: `n_pitches_used`, `n_pitch_classes_used`, `pitch_range`, `empty_beat_rate`, `empty_bar_rate`, `polyphony`, `polyphony_rate`, `scale_consistency`, `pitch_entropy`, `pitch_class_entropy`, `groove_consistency_bar`, `groove_consistency_4bar`
-   - `src/data/preprocess_pop909.py` — Legacy (different pipeline): POP909 dataset → piano-only, 4/4 only, aligned to tick 0, truncated to 64 bars. Tokens generated externally, currently in `data/tokens`, not runnable here.
+1. **Preprocess MIDIs** (already done — **do not re-run**, takes hours on 1.3M files)
+   - `src/data/gigamidi_loop_extractor.py` → extracts validated 8-bar loops
+   - `src/data/gigamidi_loop_filter.py` → computes 12 quality metrics, filters by threshold, copies to `filtered_loops_v1/`
 
-2. **Tokenize** preprocessed MIDIs → .npz files:
-   `python -m src.data.tokenize --mode remi` (or `--mode octuple`)
-   Output: `data/tokens/{remi|octuple}/*.npz`. Tokenizer uses symusic `Score` backend.
+2. **Tokenize** preprocessed MIDIs → .npz files (preserves directory structure):
+   ```
+   python -m src.data.tokenize --mode remi --gigamidi
+   python -m src.data.tokenize --mode octuple --gigamidi
+   ```
+   Output: `data/tokens/{split}-{mode}/{subset}/4-4/{stem}.npz`. Each file = exactly one 8-bar loop.
+   Tokenizer auto-cached to `data/tokenizers/{mode}_tokenizer.pkl`. Stats (`token_stats.json`) written per leaf folder.
+   Legacy (POP909 flat): `python -m src.data.tokenize --mode remi`
 
-3. **Slice into 8-bar chunks** (for proper sequential training):
-   `python -m src.data.tokenize --mode remi --slice-8bar`
-   (or specify custom paths: `--input data/tokens/remi --output data/tokens/remi_8bar`)
-   Output: `data/tokens/{remi|octuple}_8bar/*.npz`. Each file = exactly 8 bars.
+3. **Pretrain** on the pretrain split:
+   ```
+   python -m src.training.pretrain [--split pretrain]
+   ```
+   Config hardcoded in code: batch_size=32, lr=5e-4, epochs=100, mode=remi. Logs to W&B project `midi-gpt` (W&B required).
+   Checkpoints saved to `src/checkpoints/` every 10 epochs + `best.pt` for lowest loss.
+   Token path: `data/tokens/{split}-{mode}/train/4-4/`.
 
-4. **Train** (hardcoded config in `src/main.py`):
-   `python -m src.main`
-   Default: batch_size=32, lr=5e-4, epochs=100, mode=remi. Logs to W&B project `midi-gpt` (W&B required).
-   Checkpoints saved to `src/checkpoints/` every **10 epochs** + `best.pt` for lowest loss.
-
-5. **Generate MIDI** from checkpoint:
-   `python -m src.generate_main --checkpoint src/checkpoints/best.pt --top-k 1 --n-samples 1`
-   Output: `data/test/generated_{stem}_{mode}_sample{i}.mid`. Auto-generates `len(prompt)` tokens. `n_samples` generates multiple continuations from the same prompt file.
+4. **Generate MIDI** from checkpoint (picks a random test file as prompt):
+   ```
+   python -m src.generate_main --checkpoint src/checkpoints/best.pt --top-k 1 --n-samples 1 [--split pretrain]
+   ```
+   Output: `data/test/generated_{stem}_{mode}_sample{i}.mid`. Auto-generates `len(prompt)` tokens.
 
 ## Architecture
-- `src/data/preprocess_pop909.py` — POP909 dataset preprocessor (see Pipeline Step 1). Tokens generated externally, not runnable here.
-- `src/data/gigamidi_loop_extractor.py` — GigaMIDI preprocessor (see Pipeline Step 1). Reads filtered metadata CSV, validates 8-bar loops (32-beat ±0.5 duration, single TS with denominator=4, non-drum tracks, ≥10 notes), extracts to `data/GigaMIDI/extracted_loops_v1/{split}/{ts_type}/`. Runs in parallel via `mp.Pool`. Produces `manifest.csv`.
-- `src/data/gigamidi_loop_filter.py` — Computes 12 quality metrics (adapted from muspy) on extracted 4/4 loops. Two-phase: `compute` writes enriched CSV, `filter` applies thresholds and copies files to `data/GigaMIDI/filtered_loops_v1/{split}/4-4/`. Uses `mp.Pool` parallel processing.
-- `src/data/tokenize.py` — REMI / Octuple tokenizer creation (miditok). Config hardcodes: no chords/rests/tempos/time-sigs, 16 ticks/beat, 32 velocities, no programs. Also has `rechunk_tokens()` for 8-bar slicing (CLI: `--slice-8bar`).
-- `src/data/dataset.py` — `MidiDataset`: one .npz file = one 8-bar sample. No random cropping. Pad token = 0. `seq_len` computed dynamically from data. Long sequences capped at `max_seq_len`.
-- `src/data/detokenize.py` — Converts generated tokens back to MIDI files using miditok. **Tokenizer config duplicated from tokenize.py — keep in sync.** Optional `prompt_tokens` param builds a 2-track Score (Generated + Prompt).
-- `src/models/` — Both are `TransformerEncoder`-based (causal mask applied manually as `triu(-inf, diag=1)`). Octuple sums per-field embeddings; REMI uses a single embedding. Sinusoidal positional encoding.
-- `src/generation/generate.py` — Autoregressive sampling with **top-k filtering**. No KV-cache.
-- `src/utils/checkpoint.py` — `save_checkpoint()` saves every 10 epochs + updates `best.pt`. `load_checkpoint()` uses `weights_only=False`.
-- `src/generate_main.py` — Full generation pipeline: load checkpoint → 4-bar prime → generate → detokenize → save MIDI. Output has 2 tracks (Generated + Prompt). `n_samples` produces multiple continuations from the same prompt file. `max_new_tokens` is auto-set to `len(prompt)`.
+- `src/data/gigamidi_loop_extractor.py` — Reads filtered metadata CSV, validates 8-bar loops (32-beat ±0.5, single TS with denom=4, non-drum, ≥10 notes), extracts to `data/GigaMIDI/extracted_loops_v1/`. Parallel via `mp.Pool`.
+- `src/data/gigamidi_loop_filter.py` — 12 quality metrics (adapted from muspy) on extracted 4/4 loops. Two-phase: `compute` writes enriched CSV, `filter` applies thresholds and copies to `filtered_loops_v1/`.
+- `src/data/tokenizer_utils.py` — Shared configs + cached `get_tokenizer()` (pickled to `data/tokenizers/`). Also `compute_token_stats()`.
+- `src/data/tokenize.py` — REMI/Octuple tokenizer. `tokenize_recursive()` walks the GigaMIDI tree. `rechunk_tokens()` for 8-bar slicing of legacy flat tokens.
+- `src/data/detokenize.py` — Converts tokens back to MIDI via miditok. Optional `prompt_tokens` builds a 2-track Score.
+- `src/data/dataset.py` — `MidiDataset`: one .npz = one sample. Pad token = 0. `seq_len` computed by scanning all files on startup.
+- `src/models/remi_transformer.py` — `TransformerEncoder`-based (causal via `is_causal=True`). d_model=512, 8 layers, 8 heads, FF=2048.
+- `src/models/octuple_transformer.py` — Same pattern but sums per-field embeddings. d_model=256, 4 layers, 4 heads, FF=512.
+- `src/generation/generate.py` — Autoregressive top-k sampling. No KV-cache.
+- `src/utils/checkpoint.py` — `save_checkpoint()` saves every 10 epochs + updates `best.pt` on lower loss. `load_checkpoint()` uses `weights_only=False`.
+- `src/training/trainer.py` — Slices `batch[:, :-1]` / `batch[:, 1:]` for next-token prediction. Uses bfloat16 AMP.
 
 ## Key Conventions & Gotchas
 - **Pad token = 0** everywhere (loss `ignore_index=0`, dataset pad `value=0`).
-- `src/main.py` config is hardcoded — `configs/` dir exists but is empty (unused).
-- Tokenizer config (`beat_res`, `num_velocities`, etc.) is **duplicated** in both `tokenize.py` and `detokenize.py` — edits must stay in sync.
-- `MidiDataset` scans all .npz files to compute `seq_len` dynamically — takes a few seconds on startup.
 - Octuple mode: `tokenizer.vocab` is a **list** of vocab sizes per field. REMI: single `tokenizer.vocab_size`.
-- Octuple bar detection for prompt: `tokens[:, 0] < 4` (not `tokenizer.vocab["Bar_None"]`). REMI uses `tokenizer.vocab["Bar_None"]`.
+- Octuple bar detection for prompt: `tokens[:, 0] < 4`. REMI uses `tokenizer.vocab["Bar_None"]`.
 - symusic `Score` object is the required backend for miditok.
 - W&B required: `wandb.init()` called unconditionally — train will fail if not logged in.
-- `.gitignore` excludes `/data/` and `wandb/` — dataset and logs never committed.
-- Checkpoints (.pt files) excluded from git; directory tracked via `.gitkeep`.
-
-## Pending Work
-- Eval metrics logged to W&B: pitch histogram distance (muspy), IOI distribution (rhythm distance), IR/VMO
-  - See [MGEval](https://github.com/RichardYang40148/mgeval) for implementations
-- Enforce bar token as first generated token (or keep 5th bar token from prompt as the first token in continuation)
-- Optionally: top-p sampling and KV-cache
+- bfloat16 AMP in trainer — requires compatible GPU (CUDA). Falls back otherwise.
+- `.gitignore` excludes `/data/`, `wandb/`, and `src/checkpoints/*.pt` (directory tracked via `.gitkeep`).
+- `configs/` directory does not exist; all training config is hardcoded in `pretrain.py`.
 
 ## Dependencies
-miditok==3.0.6.post1, numpy==2.4.4, symusic==0.6.0, torch==2.11.0, tqdm==4.67.1, wandb==0.26.1, pandas==2.2.3, muspy==0.5.0
+miditok==3.0.6.post1, numpy==2.4.4, symusic==0.6.0, torch==2.11.0, tqdm==4.67.1, wandb==0.26.1, pandas==2.2.3

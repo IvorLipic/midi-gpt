@@ -1,37 +1,9 @@
 ﻿from pathlib import Path
 import numpy as np
 import torch
-from miditok import REMI, Octuple, TokenizerConfig
 from symusic import Score, Track
 
-config_remi = TokenizerConfig(
-    use_chords=False,
-    use_rests=False,
-    use_tempos=False,
-    use_time_signatures=False,
-    beat_res={(0, 4): 16},
-    num_velocities=32,
-    use_velocities=True,
-    use_programs=False,
-)
-
-config_oct = TokenizerConfig(
-    use_chords=False,
-    use_rests=False,
-    use_tempos=False,
-    use_time_signatures=False,
-    beat_res={(0, 4): 16},
-    num_velocities=32,
-    use_velocities=True,
-    use_programs=False,
-)
-config_oct.additional_params["max_bar_embedding"] = 64
-
-def get_tokenizer(mode="remi"):
-    if mode == "remi":
-        return REMI(config_remi)
-    elif mode == "octuple":
-        return Octuple(config_oct)
+from src.data.tokenizer_utils import get_tokenizer
 
 def detokenize(tokens, tokenizer, output_path, prompt_tokens=None):
     if isinstance(tokens, torch.Tensor):

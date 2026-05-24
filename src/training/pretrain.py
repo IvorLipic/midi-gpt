@@ -1,8 +1,8 @@
-﻿import torch
+import torch
 from torch.utils.data import DataLoader
 
 from src.data.dataset import MidiDataset
-from src.data.tokenize import get_tokenizer
+from src.data.tokenizer_utils import get_tokenizer
 from src.models.remi_transformer import RemiTransformerLM 
 from src.models.octuple_transformer import OctupleTransformerLM
 from src.training.trainer import train_epoch
@@ -12,21 +12,22 @@ from src.utils.checkpoint import save_checkpoint
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def main():
+def main(split="pretrain"):
 
     config = {
         "batch_size": 32,
         "seq_len": None,
         "epochs": 100,
         "lr": 5e-4,
-        "mode": "remi"
+        "mode": "remi",
+        "split": split,
     }
 
     init_wandb(config)
 
     tokenizer = get_tokenizer(config["mode"])
 
-    token_folder = "data/tokens/" + config["mode"] + "_8bar"
+    token_folder = f"data/tokens/{split}-{config['mode']}/train/4-4"
     dataset = MidiDataset(token_folder, seq_len=None, mode=config["mode"], max_seq_len=config["seq_len"])
 
     config["seq_len"] = dataset.seq_len
@@ -77,4 +78,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description="Pretrain a MIDI GPT model")
+    parser.add_argument("--split", type=str, default="pretrain", help="Dataset split to train on (default: pretrain)")
+    args = parser.parse_args()
+    main(split=args.split)

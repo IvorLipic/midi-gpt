@@ -14,7 +14,7 @@ def tokenize_and_save_dataset(
     midi_folder,
     output_folder,
     suffix,
-    max_tokens=1280
+    max_tokens=1536
 ):
     midi_folder = Path(midi_folder)
     output_folder = Path(output_folder)
@@ -52,7 +52,7 @@ def tokenize_and_save_dataset(
             print(f"Error tokenizing {midi_path.name}: {e}")
 
 
-def tokenize_dataset(mode, midi_folder, output_folder, max_tokens=1280):
+def tokenize_dataset(mode, midi_folder, output_folder, max_tokens=1536):
     tokenizer = get_tokenizer(mode)
     tokenize_and_save_dataset(
         tokenizer,
@@ -63,7 +63,7 @@ def tokenize_dataset(mode, midi_folder, output_folder, max_tokens=1280):
     )
 
 
-def tokenize_recursive(mode, input_root, output_root, cache_dir=None, subsets=None, max_tokens=1280):
+def tokenize_recursive(mode, input_root, output_root, cache_dir=None, subsets=None, max_tokens=1536):
     input_root = Path(input_root)
     output_root = Path(output_root)
     tokenizer = get_tokenizer(mode)
@@ -76,7 +76,7 @@ def tokenize_recursive(mode, input_root, output_root, cache_dir=None, subsets=No
             if not subset_dir.is_dir():
                 continue
             subset_name = subset_dir.name
-            if subsets is not None and subset_name not in subsets:
+            if subsets is not None and split_name not in subsets:
                 continue
             midi_dir = subset_dir / "4-4"
             if not midi_dir.is_dir():
@@ -156,7 +156,7 @@ def slice_into_8bar_chunks(token_path, tokenizer, suffix="remi"):
     return chunks
 
 
-def rechunk_tokens(mode, input_folder, output_folder, max_tokens=1280):
+def rechunk_tokens(mode, input_folder, output_folder, max_tokens=1536):
     tokenizer = get_tokenizer(mode)
     input_folder = Path(input_folder)
     output_folder = Path(output_folder)
@@ -199,8 +199,8 @@ if __name__ == '__main__':
     parser.add_argument("--compute-stats", default=None)
     parser.add_argument("--subsets", type=str, default="pretrain,sft_mono,sft_poly",
                         help="Comma-separated subset names to tokenize (default: all)")
-    parser.add_argument("--max-tokens", type=int, default=1280,
-                        help="Skip sequences exceeding this many tokens (default: 1280)")
+    parser.add_argument("--max-tokens", type=int, default=1536,
+                        help="Skip sequences exceeding this many tokens (default: 1536)")
     args = parser.parse_args()
 
     if args.compute_stats:

@@ -17,10 +17,10 @@ pip install -r requirements.txt
 
 2. **Tokenize** preprocessed MIDIs → .npz files (preserves directory structure):
    ```
-   python -m src.data.tokenize --mode remi --gigamidi [--subsets pretrain,sft_mono --max-tokens 1280]
+   python -m src.data.tokenize --mode remi --gigamidi [--subsets pretrain,sft_mono --max-tokens 1536]
    python -m src.data.tokenize --mode octuple --gigamidi
    ```
-   `--subsets` filters which of `pretrain,sft_mono,sft_poly` to process (default: all). `--max-tokens` skips sequences exceeding the limit (default: 1280).
+   `--subsets` filters which of `pretrain,sft_mono,sft_poly` to process (default: all). `--max-tokens` skips sequences exceeding the limit (default: 1536).
    Output: `data/tokens/{split}-{mode}/{subset}/4-4/{stem}.npz`. Each file = one 8-bar loop.
    Tokenizer auto-cached to `data/tokenizers/{mode}_tokenizer.pkl`. Stats (`token_stats.json`) written per leaf folder.
    Legacy (POP909 flat): `python -m src.data.tokenize --mode remi`

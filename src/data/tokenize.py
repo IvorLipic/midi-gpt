@@ -13,7 +13,8 @@ def tokenize_and_save_dataset(
     tokenizer,
     midi_folder,
     output_folder,
-    suffix
+    suffix,
+    max_tokens=1280
 ):
     midi_folder = Path(midi_folder)
     output_folder = Path(output_folder)
@@ -36,6 +37,10 @@ def tokenize_and_save_dataset(
             tokens = tokens[0]
             tokens = np.asarray(tokens, dtype=np.int32)
 
+            if len(tokens) > max_tokens:
+                print(f"  Skipping {midi_path.name}: {len(tokens)} tokens exceeds max_tokens={max_tokens}")
+                continue
+
             out_path = output_folder / f"{midi_path.stem}_{suffix}.npz"
             np.savez_compressed(
                 out_path,
@@ -47,17 +52,18 @@ def tokenize_and_save_dataset(
             print(f"Error tokenizing {midi_path.name}: {e}")
 
 
-def tokenize_dataset(mode, midi_folder, output_folder):
+def tokenize_dataset(mode, midi_folder, output_folder, max_tokens=1280):
     tokenizer = get_tokenizer(mode)
     tokenize_and_save_dataset(
         tokenizer,
         midi_folder,
         output_folder,
-        suffix=mode
+        suffix=mode,
+        max_tokens=max_tokens
     )
 
 
-def tokenize_recursive(mode, input_root, output_root, cache_dir=None):
+def tokenize_recursive(mode, input_root, output_root, cache_dir=None, subsets=None, max_tokens=1280):
     input_root = Path(input_root)
     output_root = Path(output_root)
     tokenizer = get_tokenizer(mode)
@@ -70,6 +76,8 @@ def tokenize_recursive(mode, input_root, output_root, cache_dir=None):
             if not subset_dir.is_dir():
                 continue
             subset_name = subset_dir.name
+            if subsets is not None and subset_name not in subsets:
+                continue
             midi_dir = subset_dir / "4-4"
             if not midi_dir.is_dir():
                 continue
@@ -92,6 +100,10 @@ def tokenize_recursive(mode, input_root, output_root, cache_dir=None):
                     tokens = tokens[0]
                     tokens = np.asarray(tokens, dtype=np.int32)
 
+                    if len(tokens) > max_tokens:
+                        print(f"  Skipping {midi_path.name}: {len(tokens)} tokens exceeds max_tokens={max_tokens}")
+                        continue
+
                     out_path = out_dir / f"{midi_path.stem}.npz"
                     np.savez_compressed(out_path, tokens=tokens, length=len(tokens))
                     lengths.append(len(tokens))
@@ -102,6 +114,7 @@ def tokenize_recursive(mode, input_root, output_root, cache_dir=None):
                 arr = np.array(lengths)
                 stats = {
                     "count": int(len(arr)),
+                    "total": int(arr.sum()),
                     "max": int(arr.max()),
                     "min": int(arr.min()),
                     "mean": float(round(arr.mean(), 2)),
@@ -143,7 +156,7 @@ def slice_into_8bar_chunks(token_path, tokenizer, suffix="remi"):
     return chunks
 
 
-def rechunk_tokens(mode, input_folder, output_folder):
+def rechunk_tokens(mode, input_folder, output_folder, max_tokens=1280):
     tokenizer = get_tokenizer(mode)
     input_folder = Path(input_folder)
     output_folder = Path(output_folder)
@@ -163,6 +176,8 @@ def rechunk_tokens(mode, input_folder, output_folder):
             data = np.load(token_path)
             chunks = slice_into_8bar_chunks(data, tokenizer, suffix=mode)
             for chunk in chunks:
+                if len(chunk) > max_tokens:
+                    continue
                 out_name = f"{token_path.stem}_chunk{chunk_idx:04d}_{mode}.npz"
                 out_path = output_folder / out_name
                 np.savez_compressed(out_path, tokens=chunk, length=len(chunk))
@@ -182,6 +197,10 @@ if __name__ == '__main__':
     parser.add_argument("--input", default=None)
     parser.add_argument("--output", default=None)
     parser.add_argument("--compute-stats", default=None)
+    parser.add_argument("--subsets", type=str, default="pretrain,sft_mono,sft_poly",
+                        help="Comma-separated subset names to tokenize (default: all)")
+    parser.add_argument("--max-tokens", type=int, default=1280,
+                        help="Skip sequences exceeding this many tokens (default: 1280)")
     args = parser.parse_args()
 
     if args.compute_stats:
@@ -191,12 +210,13 @@ if __name__ == '__main__':
         mode = args.mode
         input_folder = args.input or f"data/tokens/{mode}"
         output_folder = args.output or f"data/tokens/{mode}_8bar"
-        rechunk_tokens(mode, input_folder, output_folder)
+        rechunk_tokens(mode, input_folder, output_folder, max_tokens=args.max_tokens)
     elif args.gigamidi:
+        subsets = set(s.strip() for s in args.subsets.split(",")) if args.subsets else None
         input_root = args.input or "data/GigaMIDI/filtered_loops_v1"
         output_root = args.output or "data/tokens"
-        tokenize_recursive(args.mode, input_root, output_root)
+        tokenize_recursive(args.mode, input_root, output_root, subsets=subsets, max_tokens=args.max_tokens)
     else:
         midi_folder = args.input or "aligned_piano_tracks"
         output_folder = args.output or f"data/tokens/{args.mode}"
-        tokenize_dataset(args.mode, midi_folder, output_folder)
+        tokenize_dataset(args.mode, midi_folder, output_folder, max_tokens=args.max_tokens)

@@ -70,6 +70,7 @@ def compute_token_stats(folder: str | Path) -> dict:
     arr = np.array(lengths)
     stats = {
         "count": int(len(arr)),
+        "total": int(arr.sum()),
         "max": int(arr.max()),
         "min": int(arr.min()),
         "mean": float(round(arr.mean(), 2)),

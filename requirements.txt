@@ -5,3 +5,7 @@ torch==2.11.0
 tqdm==4.67.1
 wandb==0.26.1
 pandas==2.2.3
+
+#triton-windows==3.6.0.post26
+
+# The above is specific version i used which is compatible with torch 2.11 on windows, see https://github.com/triton-lang

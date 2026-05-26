@@ -3,17 +3,13 @@ import numpy as np
 from pathlib import Path
 
 class MidiDataset(torch.utils.data.Dataset):
-    def __init__(self, folder, seq_len=None, mode="remi", max_seq_len=None):
+    def __init__(self, folder, max_seq_len=None):
         self.files = sorted(Path(folder).glob("*.npz"))
-        self.mode = mode
-        self.max_seq_len = max_seq_len
-
-        if seq_len is None:
-            seq_len = get_max_seq_len(folder, mode, max_seq_len)
-        self.seq_len = seq_len
 
         if max_seq_len is None:
-            self.max_seq_len = seq_len
+            max_seq_len = get_max_seq_len(folder)
+
+        self.max_seq_len = max_seq_len
 
     def __len__(self):
         return len(self.files)
@@ -26,8 +22,8 @@ class MidiDataset(torch.utils.data.Dataset):
         if tokens.shape[0] > self.max_seq_len:
             tokens = tokens[:self.max_seq_len]
 
-        if tokens.shape[0] < self.seq_len:
-            padding_size = self.seq_len - tokens.shape[0]
+        if tokens.shape[0] < self.max_seq_len:
+            padding_size = self.max_seq_len - tokens.shape[0]
             if tokens.dim() == 1:
                 tokens = torch.nn.functional.pad(tokens, (0, padding_size), value=0)
             else:
@@ -35,7 +31,7 @@ class MidiDataset(torch.utils.data.Dataset):
 
         return tokens
 
-def get_max_seq_len(folder, mode="remi", max_seq_len=None):
+def get_max_seq_len(folder):
     files = sorted(Path(folder).glob("*.npz"))
     max_len = 0
     for f in files:
@@ -43,7 +39,5 @@ def get_max_seq_len(folder, mode="remi", max_seq_len=None):
         length = data["tokens"].shape[0]
         if length > max_len:
             max_len = length
-    if max_seq_len is not None and max_len > max_seq_len:
-        max_len = max_seq_len
     print(f"Max sequence length in {folder}: {max_len} ({len(files)} samples)")
     return max_len

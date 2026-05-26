@@ -30,7 +30,7 @@ pip install -r requirements.txt
    python -m src.training.pretrain [--split pretrain]
    ```
    Config hardcoded in code: batch_size=32, lr=5e-4, epochs=100, mode=remi. Logs to W&B project `midi-gpt` (W&B required).
-   Uses `torch.compile(model, mode="max-autotune")` + `FLASH_ATTENTION` sdpa kernel + AdamW `fused=True`.
+   Uses `torch.compile(model, mode="max-autotune")` + AdamW `fused=True`.
    Checkpoints saved to `src/checkpoints/` every 10 epochs + `best.pt` for lowest loss.
    Token path: `data/tokens/{split}-{mode}/train/4-4/`.
 
@@ -66,7 +66,6 @@ pip install -r requirements.txt
 - **`weights_only=False`** in `load_checkpoint()` — allows pickle, intentional.
 - **bfloat16 AMP** in trainer — requires compatible GPU (CUDA). Falls back otherwise.
 - **AdamW `fused=True`** in optimizer — requires CUDA.
-- **`torch.compile` with `max-autotune`** + **Flash Attention sdpa kernel** used during training.
 - **`silence_cpp()`** wraps `Score()` calls in tokenization to suppress symusic C-level output.
 - **No `__init__.py` files** in `src/` — Python 3.13 implicit namespace packages work fine.
 - **No test/lint/typecheck infrastructure** — no CI, no pytest, no mypy, no ruff. Only validation is running scripts directly.

@@ -1,47 +1,56 @@
 import torch
+import os
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 from src.data.dataset import MidiDataset
 from src.data.tokenizer_utils import get_tokenizer
 from src.models.remi_transformer import RemiTransformerLM 
 from src.models.octuple_transformer import OctupleTransformerLM
-from src.training.trainer import train_epoch
+from src.training.trainer import train_epoch, evaluate
 from src.training.loss import compute_octuple_loss, compute_remi_loss
 from src.utils.logging import init_wandb, log
 from src.utils.checkpoint import save_checkpoint
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def main(split="pretrain"):
+def create_dataloader(folder, seq_len, batch_size, shuffle=True):
+    dataset = MidiDataset(folder, max_seq_len=seq_len)
+    return DataLoader(
+        dataset, 
+        batch_size=batch_size, 
+        shuffle=shuffle, 
+        pin_memory=True,
+        num_workers=4,
+        persistent_workers=True,
+        prefetch_factor=2
+    )
+
+def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
 
     config = {
-        "batch_size": 32,
-        "seq_len": None,
-        "epochs": 100,
-        "lr": 5e-4,
+        "batch_size": 24,
+        "effective_batch_size": 48,
+        "seq_len": 1536,
+        "epochs": 1,
+        "lr": 1e-4,
         "mode": "remi",
         "split": split,
     }
 
     init_wandb(config)
-
     tokenizer = get_tokenizer(config["mode"])
 
-    token_folder = f"data/tokens/{split}-{config['mode']}/train/4-4"
-    dataset = MidiDataset(token_folder, seq_len=None, mode=config["mode"], max_seq_len=config["seq_len"])
+    base_data_path = f"data/tokens/{split}-{config['mode']}"
+    train_folder = f"{base_data_path}/train/4-4"
+    val_folder = f"{base_data_path}/validation/4-4"
+    test_folder = f"{base_data_path}/test/4-4"
 
-    config["seq_len"] = dataset.seq_len
-    print(f"Using seq_len={config['seq_len']}, dataset={len(dataset)} samples")
+    train_loader = create_dataloader(train_folder, config["seq_len"], config["batch_size"], shuffle=True)
+    val_loader = create_dataloader(val_folder, config["seq_len"], config["batch_size"], shuffle=False)
+    test_loader = create_dataloader(test_folder, config["seq_len"], config["batch_size"], shuffle=False)
 
-    loader = DataLoader(dataset, 
-                        batch_size=config["batch_size"], 
-                        shuffle=True, 
-                        pin_memory=True,
-                        num_workers=4,
-                        persistent_workers=True,
-                        prefetch_factor=2)
-
-    print(f"Vocab size: {tokenizer.vocab_size}, Batches per epoch: {len(loader)}")
+    print(f"Vocab size: {tokenizer.vocab_size}, Train Batches: {len(train_loader)}, Val Batches: {len(val_loader)}, Test Batches: {len(test_loader)}")
 
     if config["mode"] == "remi":
         model = RemiTransformerLM(
@@ -57,24 +66,48 @@ def main(split="pretrain"):
         ).to(DEVICE)
         criterion = compute_octuple_loss
     
-    model = torch.compile(model, mode="max-autotune")
+    #model = torch.compile(model, mode="max-autotune") # Requires triton
         
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"], fused=True)
-    best_loss = float("inf")
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=0.01, fused=True)
 
-    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
-        for epoch in range(config["epochs"]):
-            loss = train_epoch(model, loader, optimizer, criterion, DEVICE)
+    accum_steps = config["effective_batch_size"] // config["batch_size"]
+    total_training_steps = (len(train_loader) // accum_steps) * config["epochs"]
+    num_warmup_steps = int(0.10 * total_training_steps)
 
-            print(f"Epoch {epoch}: {loss:.4f}")
-            log({"epoch": epoch, "loss": loss})
+    # 1. Linear Warmup: from 1% of LR up to 100% of LR
+    warmup_scheduler = LinearLR(optimizer, start_factor=0.01, end_factor=1.0, total_iters=num_warmup_steps)
 
-            if epoch % 10 == 0:
-                save_checkpoint(model, optimizer, epoch, config, loss)
+    # 2. Cosine Decay: from 100% of LR down to 10% of LR (eta_min)
+    decay_scheduler = CosineAnnealingLR(optimizer, T_max=(total_training_steps - num_warmup_steps), eta_min=config["lr"] * 0.1)
 
-            if loss < best_loss:
-                best_loss = loss
-                print(f"New best loss: {best_loss:.4f}")
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, decay_scheduler], milestones=[num_warmup_steps])
+
+    # Check if a checkpoint exists
+    start_epoch = 0
+    if os.path.exists(checkpoint_path):
+        print(f"Loading checkpoint from {checkpoint_path}...")
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        start_epoch = checkpoint["epoch"] + 1
+
+    for epoch in range(start_epoch, config["epochs"]):
+        print(f"\n--- Epoch {epoch} ---")
+
+        avg_train_loss = train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, DEVICE, accum_steps)
+        
+        print("Running full test evaluation...")
+        test_loss = evaluate(model, test_loader, criterion, DEVICE)
+
+        print(f"Epoch {epoch} complete. Test Loss: {test_loss:.4f}")
+            
+        log({
+            "test_loss": test_loss,
+            "train/avg_loss": avg_train_loss
+        })
+
+        save_checkpoint(model, optimizer, scheduler, epoch, config, avg_train_loss, test_loss)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,8 @@
-import torch
 import os
+import signal
+import wandb
+
+import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
@@ -13,6 +16,13 @@ from src.utils.logging import init_wandb, log
 from src.utils.checkpoint import save_checkpoint
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+stop_training = False
+
+def handle_interrupt(sig, frame):
+    global stop_training
+    print("\n[!] Caught interrupt! Saving checkpoint and exiting gracefully...")
+    stop_training = True
 
 def create_dataloader(folder, seq_len, batch_size, shuffle=True):
     dataset = MidiDataset(folder, max_seq_len=seq_len)
@@ -32,13 +42,12 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         "batch_size": 24,
         "effective_batch_size": 48,
         "seq_len": 1536,
-        "epochs": 1,
+        "epochs": 5,
         "lr": 1e-4,
         "mode": "remi",
         "split": split,
     }
 
-    init_wandb(config)
     tokenizer = get_tokenizer(config["mode"])
 
     base_data_path = f"data/tokens/{split}-{config['mode']}"
@@ -47,7 +56,9 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
     test_folder = f"{base_data_path}/test/4-4"
 
     train_loader = create_dataloader(train_folder, config["seq_len"], config["batch_size"], shuffle=True)
+
     val_loader = create_dataloader(val_folder, config["seq_len"], config["batch_size"], shuffle=False)
+
     test_loader = create_dataloader(test_folder, config["seq_len"], config["batch_size"], shuffle=False)
 
     print(f"Vocab size: {tokenizer.vocab_size}, Train Batches: {len(train_loader)}, Val Batches: {len(val_loader)}, Test Batches: {len(test_loader)}")
@@ -65,8 +76,6 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
             max_len=config["seq_len"]
         ).to(DEVICE)
         criterion = compute_octuple_loss
-    
-    #model = torch.compile(model, mode="max-autotune") # Requires triton
         
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=0.01, fused=True)
 
@@ -84,15 +93,28 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
 
     # Check if a checkpoint exists
     start_epoch = 0
+    run_id = None
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint from {checkpoint_path}...")
         checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-        start_epoch = checkpoint["epoch"] + 1
+        start_epoch = checkpoint.get("epoch") + 1
+        run_id = checkpoint.get("wandb_run_id")
+  
+    if run_id:
+        init_wandb(config, resume="must", id=run_id)
+    else:
+        init_wandb(config)
+        run_id = wandb.run.id
+    
+    model = torch.compile(model) # Requires triton
+
+    signal.signal(signal.SIGINT, handle_interrupt)
 
     for epoch in range(start_epoch, config["epochs"]):
+        if stop_training: break
         print(f"\n--- Epoch {epoch} ---")
 
         avg_train_loss = train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, DEVICE, accum_steps)
@@ -107,7 +129,7 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
             "train/avg_loss": avg_train_loss
         })
 
-        save_checkpoint(model, optimizer, scheduler, epoch, config, avg_train_loss, test_loss)
+        save_checkpoint(model, optimizer, scheduler, epoch, config, avg_train_loss, test_loss, run_id)
 
 
 if __name__ == "__main__":

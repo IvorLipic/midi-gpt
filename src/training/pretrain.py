@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
-from src.data.dataset import MidiDataset, NestedMidiDataset, nested_collate
+from src.data.dataset import MidiDataset, nested_collate, collate_pad_to_longest
 from src.data.tokenizer_utils import get_tokenizer
 from src.models.remi_transformer import RemiTransformerLM 
 from src.models.nested_remi_transformer import NestedRemiTransformerLM
@@ -25,27 +25,17 @@ def handle_interrupt(sig, frame):
     stop_training = True
 
 def create_dataloader(folder, seq_len, batch_size, shuffle=True, nested=False):
-    if nested:
-        dataset = NestedMidiDataset(folder, max_seq_len=seq_len)
-        return DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=shuffle,
-            collate_fn=nested_collate,
-            pin_memory=True,
-            num_workers=4,
-            persistent_workers=True,
-            prefetch_factor=2,
-        )
     dataset = MidiDataset(folder, max_seq_len=seq_len)
+    collate_fn = nested_collate if nested else collate_pad_to_longest
     return DataLoader(
-        dataset, 
-        batch_size=batch_size, 
-        shuffle=shuffle, 
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        collate_fn=collate_fn,
         pin_memory=True,
         num_workers=4,
         persistent_workers=True,
-        prefetch_factor=2
+        prefetch_factor=2,
     )
 
 def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
@@ -57,7 +47,7 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         "epochs": 5,
         "lr": 1e-4,
         "mode": "remi",
-        "model_type": "nested_remi",
+        "model_type": "remi",
         "split": split,
     }
 
@@ -94,7 +84,7 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
 
     accum_steps = config["effective_batch_size"] // config["batch_size"]
     total_training_steps = (len(train_loader) // accum_steps) * config["epochs"]
-    num_warmup_steps = int(0.10 * total_training_steps)
+    num_warmup_steps = int(0.10 * total_training_steps / config["epochs"])
 
     # 1. Linear Warmup: from 1% of LR up to 100% of LR
     warmup_scheduler = LinearLR(optimizer, start_factor=0.01, end_factor=1.0, total_iters=num_warmup_steps)

@@ -17,10 +17,8 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
             input_list = [t[:-1] for t in batch]
             target = torch.cat([t[1:] for t in batch])
         else:
-            batch = batch.to(device, non_blocking=True)
-            # (B, L)
-            input_ids = batch[:, :-1, ...]
-            target = batch[:, 1:, ...]
+            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+            input_ids, target = batch['inputs'], batch['targets']
             src_key_padding_mask = (input_ids == 0)
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):
@@ -68,9 +66,8 @@ def evaluate(model, dataloader, criterion, device, limit=None, nested=False):
             input_list = [t[:-1] for t in batch]
             target = torch.cat([t[1:] for t in batch])
         else:
-            batch = batch.to(device, non_blocking=True)
-            input_ids = batch[:, :-1, ...]
-            target = batch[:, 1:, ...]
+            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+            input_ids, target = batch['inputs'], batch['targets']
             src_key_padding_mask = (input_ids == 0)
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):

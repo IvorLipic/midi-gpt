@@ -48,6 +48,6 @@ class RemiTransformerLM(nn.Module):
 
         x = self.embed(input_ids) * (self.d_model ** 0.5)
         x = self.pos_enc(x)
-        x = self.encoder(x, mask=mask, src_key_padding_mask=src_key_padding_mask)
+        x = self.encoder(x, mask=mask, src_key_padding_mask=src_key_padding_mask, is_causal=True)
         logits = self.lm_head(x)  # (B, L, vocab_size)
         return logits

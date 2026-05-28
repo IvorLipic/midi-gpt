@@ -1,37 +1,10 @@
 ﻿import torch
+import torch.nn.functional as F
 import numpy as np
 from pathlib import Path
 
+
 class MidiDataset(torch.utils.data.Dataset):
-    def __init__(self, folder, max_seq_len=None):
-        self.files = sorted(Path(folder).glob("*.npz"))
-
-        if max_seq_len is None:
-            max_seq_len = get_max_seq_len(folder)
-
-        self.max_seq_len = max_seq_len
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, idx):
-        data = np.load(self.files[idx])
-        tokens = data["tokens"]
-        tokens = torch.from_numpy(tokens).long()
-
-        if tokens.shape[0] > self.max_seq_len:
-            tokens = tokens[:self.max_seq_len]
-
-        if tokens.shape[0] < self.max_seq_len:
-            padding_size = self.max_seq_len - tokens.shape[0]
-            tokens = torch.nn.functional.pad(tokens, (0, padding_size), value=0)
-
-        return tokens
-
-
-class NestedMidiDataset(torch.utils.data.Dataset):
-    """Returns unpadded (L_i,) tensors for use with nested tensor collate."""
-
     def __init__(self, folder, max_seq_len=None):
         self.files = sorted(Path(folder).glob("*.npz"))
 
@@ -54,8 +27,24 @@ class NestedMidiDataset(torch.utils.data.Dataset):
 
 
 def nested_collate(batch):
-    """Returns a list of unpadded 1-D tensors."""
     return batch
+
+
+def pad_sequence(seq, max_len, pad_id=0):
+    pad_size = max_len - seq.shape[0]
+    return F.pad(seq, (0, pad_size), value=pad_id)
+
+
+def collate_pad_to_longest(batch, pad_id=0):
+    max_len = max(t.shape[0] - 1 for t in batch)
+    inputs, targets = [], []
+    for t in batch:
+        inputs.append(pad_sequence(t[:-1], max_len, pad_id))
+        targets.append(pad_sequence(t[1:], max_len, pad_id))
+    return {
+        "inputs": torch.stack(inputs),
+        "targets": torch.stack(targets),
+    }
 
 
 def get_max_seq_len(folder):

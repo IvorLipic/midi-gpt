@@ -58,7 +58,7 @@ def main(checkpoint_path=None, top_k=40, n_samples=1, split="pretrain"):
             max_len=config["seq_len"],
         ).to(DEVICE)
 
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(checkpoint["model_state_dict"], strict=False)
     model.eval()
 
     token_dir = Path("data/tokens") / f"{split}-{mode}" / "test" / "4-4"

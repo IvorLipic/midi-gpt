@@ -1,4 +1,5 @@
 import copy
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -41,6 +42,25 @@ class NestedMultiHeadAttention(nn.Module):
         assert E_total % nheads == 0, "Embedding dim is not divisible by nheads"
         self.E_head = E_total // nheads
         self.bias = bias
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        # Match nn.MultiheadAttention._reset_parameters:
+        # - in_proj_weight: xavier_uniform (default gain=1.0)
+        # - in_proj_bias: constant 0.0
+        # - out_proj.weight: NOT re-initialized (stays nn.Linear default = kaiming_uniform)
+        # - out_proj.bias: constant 0.0
+        if self._qkv_same_embed_dim:
+            nn.init.xavier_uniform_(self.packed_proj.weight)
+            if self.packed_proj.bias is not None:
+                nn.init.zeros_(self.packed_proj.bias)
+        else:
+            for proj in [self.q_proj, self.k_proj, self.v_proj]:
+                nn.init.xavier_uniform_(proj.weight)
+                if proj.bias is not None:
+                    nn.init.zeros_(proj.bias)
+        if self.out_proj.bias is not None:
+            nn.init.zeros_(self.out_proj.bias)
 
     def forward(
         self,
@@ -195,7 +215,10 @@ class NestedRemiTransformerLM(nn.Module):
             dim_feedforward=dim_feedforward,
             dropout=dropout,
         )
-        self.encoder = NestedTransformerEncoder(encoder_layer, num_layers=n_layers)
+        self.encoder = NestedTransformerEncoder(
+            encoder_layer, num_layers=n_layers,
+            norm=nn.LayerNorm(d_model),
+        )
         self.lm_head = nn.Linear(d_model, vocab_size)
 
     def forward(self, input_ids, attn_mask=None, is_causal=False):

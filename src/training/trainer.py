@@ -21,13 +21,14 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
             # REMI: (B, L) | Octuple: (B, L, F)
             input_ids = batch[:, :-1, ...]
             target = batch[:, 1:, ...]
+            src_key_padding_mask = (input_ids == 0)
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):
             if nested:
                 logits = model(input_list)
                 loss = criterion(logits, target)
             else:
-                logits = model(input_ids)
+                logits = model(input_ids, src_key_padding_mask=src_key_padding_mask)
                 loss = criterion(logits, target)
             loss_scaled = loss / accum_steps
                     
@@ -70,13 +71,14 @@ def evaluate(model, dataloader, criterion, device, limit=None, nested=False):
             batch = batch.to(device, non_blocking=True)
             input_ids = batch[:, :-1, ...]
             target = batch[:, 1:, ...]
+            src_key_padding_mask = (input_ids == 0)
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):
             if nested:
                 logits = model(input_list)
                 loss = criterion(logits, target)
             else:
-                logits = model(input_ids)
+                logits = model(input_ids, src_key_padding_mask=src_key_padding_mask)
                 loss = criterion(logits, target)
             
         losses.append(loss.item())

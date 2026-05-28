@@ -54,6 +54,7 @@ pip install -r requirements.txt
 - `src/training/trainer.py` — NJT path (nested=True): batch is list of (L_i,) tensors, slices per-item, creates flat `target = torch.cat([t[1:]...])`, passes `input_list` to model. Dense path: slices `batch[:, :-1]` / `batch[:, 1:]`.
 - `src/training/loss.py` — `compute_remi_loss`: NJT-aware — uses `.values()` + flat target with `ignore_index=0` when logits are nested. `compute_octuple_loss`: mean CE across fields.
 - `src/training/pretrain.py` — Training entrypoint. Nested model: `model.encoder = torch.compile(model.encoder)`. Dense model: `model = torch.compile(model)`.
+  - Verified parity (200-sample mini test): dense avg loss ~5.92, nested avg loss ~5.97, ratio 1.0088.
 - `src/generate_main.py` — Generation entrypoint.
 - `src/utils/checkpoint.py` — `save_checkpoint()` saves every 10 epochs + updates `best.pt` on lower loss. `load_checkpoint()` uses `weights_only=False`.
 - `src/utils/logging.py` — Thin wrappers around `wandb.init` / `wandb.log`.
@@ -65,11 +66,15 @@ pip install -r requirements.txt
   **Octuple**: `tokenizer.vocab` is a **list** of vocab sizes per field. Bar detection: `tokens[:, 0] < 4`.
 - **W&B required**: `wandb.init()` called unconditionally — train will fail if not logged in.
 - **`weights_only=False`** in `load_checkpoint()` — allows pickle, intentional.
+- **Pre-LN architecture**: Both dense and nested models use Pre-LN (`norm_first=True`) with a final `nn.LayerNorm` before the LM head.
+- **Key padding mask**: Dense model uses `src_key_padding_mask=(input_ids == 0)` to skip attention over padding (matching NJT behavior). Computed in trainer and passed to model. Both `mask` (causal) and `src_key_padding_mask` are bool tensors to avoid type-mismatch warnings.
+- **Weight init alignment**: `NestedMultiHeadAttention._reset_parameters()` matches `nn.MultiheadAttention._reset_parameters()`: Xavier Uniform for in-projection weights, zero for biases. `out_proj.weight` keeps default Kaiming Uniform (not re-initialized).
 - **bfloat16 AMP** in trainer — requires compatible GPU (CUDA). Falls back otherwise.
 - **AdamW `fused=True`** in optimizer — requires CUDA.
 - **`silence_cpp()`** wraps `Score()` calls in tokenization to suppress symusic C-level output.
 - **NJT contiguous requirement**: `torch.nested.narrow` creates non-contiguous NJT → fails with `F.linear`. Always use `torch.nested.as_nested_tensor(list, layout=torch.jagged)` for contiguous NJT that supports linear/SDPA backward.
 - **`torch.compile` + NJT**: creating NJT inside a compiled function crashes PyTorch 2.11 (InternalTorchDynamoError with shape env guards). Workaround: embed/PE/NJT creation runs in eager, only `model.encoder` is compiled separately.
+- **NJT CUDA non-determinism**: NJT SDPA forward pass on CUDA has inherent non-determinism (~0.04 diff between identical calls). Checkpoint save/load round-trip diff is within this noise range — not a save/load bug.
 - **No `__init__.py` files** in `src/` — Python 3.13 implicit namespace packages work fine.
 - **No test/lint/typecheck infrastructure** — no CI, no pytest, no mypy, no ruff. Only validation is running scripts directly.
 - `.gitignore` excludes `/data/`, `wandb/`, and `src/checkpoints/*.pt` (directory tracked via `.gitkeep`).

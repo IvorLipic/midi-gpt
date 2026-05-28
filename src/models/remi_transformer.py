@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from src.models.positional_encoding import PositionalEncoding
 
@@ -25,22 +26,28 @@ class RemiTransformerLM(nn.Module):
             dim_feedforward=dim_feedforward,
             dropout=dropout,
             batch_first=True,
+            norm_first=True,
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+        self.encoder = nn.TransformerEncoder(
+            encoder_layer,
+            num_layers=n_layers,
+            norm=nn.LayerNorm(d_model),
+        )
         self.lm_head = nn.Linear(d_model, vocab_size)
 
-        master_mask = nn.Transformer.generate_square_subsequent_mask(max_len)
-        self.register_buffer("causal_mask", master_mask)
+        mask = torch.triu(torch.ones(max_len, max_len, dtype=torch.bool), diagonal=1)
+        self.register_buffer("causal_mask", mask)
 
-    def forward(self, input_ids, **kwargs):
+    def forward(self, input_ids, src_key_padding_mask=None, **kwargs):
         """
         input_ids: (B, L) int64
+        src_key_padding_mask: (B, L) bool, True = padding positions to mask
         """
         seq_len = input_ids.size(1)
         mask = self.causal_mask[:seq_len, :seq_len]
 
         x = self.embed(input_ids) * (self.d_model ** 0.5)
         x = self.pos_enc(x)
-        x = self.encoder(x, mask=mask, is_causal=True)
+        x = self.encoder(x, mask=mask, src_key_padding_mask=src_key_padding_mask)
         logits = self.lm_head(x)  # (B, L, vocab_size)
         return logits

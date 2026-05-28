@@ -6,10 +6,11 @@ import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
-from src.data.dataset import MidiDataset
+from src.data.dataset import MidiDataset, NestedMidiDataset, nested_collate
 from src.data.tokenizer_utils import get_tokenizer
 from src.models.remi_transformer import RemiTransformerLM 
 from src.models.octuple_transformer import OctupleTransformerLM
+from src.models.nested_remi_transformer import NestedRemiTransformerLM
 from src.training.trainer import train_epoch, evaluate
 from src.training.loss import compute_octuple_loss, compute_remi_loss
 from src.utils.logging import init_wandb, log
@@ -21,10 +22,22 @@ stop_training = False
 
 def handle_interrupt(sig, frame):
     global stop_training
-    print("\n[!] Caught interrupt! Saving checkpoint and exiting gracefully...")
+    print("\n[!] Caught interrupt! Exiting gracefully...")
     stop_training = True
 
-def create_dataloader(folder, seq_len, batch_size, shuffle=True):
+def create_dataloader(folder, seq_len, batch_size, shuffle=True, nested=False):
+    if nested:
+        dataset = NestedMidiDataset(folder, max_seq_len=seq_len)
+        return DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            collate_fn=nested_collate,
+            pin_memory=True,
+            num_workers=4,
+            persistent_workers=True,
+            prefetch_factor=2,
+        )
     dataset = MidiDataset(folder, max_seq_len=seq_len)
     return DataLoader(
         dataset, 
@@ -45,6 +58,7 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         "epochs": 5,
         "lr": 1e-4,
         "mode": "remi",
+        "model_type": "nested_remi",
         "split": split,
     }
 
@@ -55,15 +69,23 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
     val_folder = f"{base_data_path}/validation/4-4"
     test_folder = f"{base_data_path}/test/4-4"
 
-    train_loader = create_dataloader(train_folder, config["seq_len"], config["batch_size"], shuffle=True)
+    is_nested = config.get("model_type") == "nested_remi"
 
-    val_loader = create_dataloader(val_folder, config["seq_len"], config["batch_size"], shuffle=False)
+    train_loader = create_dataloader(train_folder, config["seq_len"], config["batch_size"], shuffle=True, nested=is_nested)
 
-    test_loader = create_dataloader(test_folder, config["seq_len"], config["batch_size"], shuffle=False)
+    val_loader = create_dataloader(val_folder, config["seq_len"], config["batch_size"], shuffle=False, nested=is_nested)
+
+    test_loader = create_dataloader(test_folder, config["seq_len"], config["batch_size"], shuffle=False, nested=is_nested)
 
     print(f"Vocab size: {tokenizer.vocab_size}, Train Batches: {len(train_loader)}, Val Batches: {len(val_loader)}, Test Batches: {len(test_loader)}")
 
-    if config["mode"] == "remi":
+    if is_nested:
+        model = NestedRemiTransformerLM(
+            vocab_size=tokenizer.vocab_size,
+            max_len=config["seq_len"]
+        ).to(DEVICE)
+        criterion = compute_remi_loss
+    elif config["mode"] == "remi":
         model = RemiTransformerLM(
             vocab_size=tokenizer.vocab_size,
             max_len=config["seq_len"]
@@ -117,10 +139,10 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         if stop_training: break
         print(f"\n--- Epoch {epoch} ---")
 
-        avg_train_loss = train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, DEVICE, accum_steps)
+        avg_train_loss = train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, DEVICE, accum_steps, nested=is_nested)
         
         print("Running full test evaluation...")
-        test_loss = evaluate(model, test_loader, criterion, DEVICE)
+        test_loss = evaluate(model, test_loader, criterion, DEVICE, nested=is_nested)
 
         print(f"Epoch {epoch} complete. Test Loss: {test_loss:.4f}")
             

@@ -31,6 +31,36 @@ class MidiDataset(torch.utils.data.Dataset):
 
         return tokens
 
+
+class NestedMidiDataset(torch.utils.data.Dataset):
+    """Returns unpadded (L_i,) tensors for use with nested tensor collate."""
+
+    def __init__(self, folder, max_seq_len=None):
+        self.files = sorted(Path(folder).glob("*.npz"))
+
+        if max_seq_len is None:
+            max_seq_len = get_max_seq_len(folder)
+
+        self.max_seq_len = max_seq_len
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        data = np.load(self.files[idx])
+        tokens = torch.from_numpy(data["tokens"]).long()
+
+        if tokens.shape[0] > self.max_seq_len:
+            tokens = tokens[:self.max_seq_len]
+
+        return tokens
+
+
+def nested_collate(batch):
+    """Returns a list of unpadded 1-D tensors (trainer creates NJT after slicing)."""
+    return batch
+
+
 def get_max_seq_len(folder):
     files = sorted(Path(folder).glob("*.npz"))
     max_len = 0

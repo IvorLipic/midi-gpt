@@ -3,7 +3,7 @@ from tqdm import tqdm
 from torch.amp import autocast
 from src.utils.logging import log
 
-def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, device, accum_steps=2, eval_interval=4000):
+def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, device, accum_steps=2, eval_interval=4000, nested=False):
     model.train()
     total_loss = 0
 
@@ -11,15 +11,22 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
 
     pbar = tqdm(train_loader, desc="Training")
     for i, batch in enumerate(pbar):
-        batch = batch.to(device, non_blocking=True)  # REMI: (B, L) | Octuple: (B, L, F)
-
-        # Slice for Next-Token Prediction
-        input_ids = batch[:, :-1, ...]
-        target_ids = batch[:, 1:, ...]
+        if nested:
+            # NJT path: batch is list of unpadded (L_i,) tensors
+            batch_list = [t.to(device, non_blocking=True) for t in batch]
+            input_ids = torch.nested.nested_tensor(
+                [t[:-1] for t in batch_list], layout=torch.jagged
+            )
+            target = torch.cat([t[1:] for t in batch_list])
+        else:
+            batch = batch.to(device, non_blocking=True)
+            # REMI: (B, L) | Octuple: (B, L, F)
+            input_ids = batch[:, :-1, ...]
+            target = batch[:, 1:, ...]
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):
             logits = model(input_ids)
-            loss = criterion(logits, target_ids)
+            loss = criterion(logits, target)
             loss_scaled = loss / accum_steps
                     
         loss_scaled.backward()
@@ -36,7 +43,7 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
 
         # Periodic Evaluation
         if (i + 1) % eval_interval == 0:
-            val_loss = evaluate(model, val_loader, criterion, device, limit=500)
+            val_loss = evaluate(model, val_loader, criterion, device, limit=None, nested=nested)
             log({"val/step_loss": val_loss})
             model.train()
             
@@ -45,7 +52,7 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
     return total_loss / len(train_loader)
 
 @torch.no_grad()
-def evaluate(model, dataloader, criterion, device, limit=None):
+def evaluate(model, dataloader, criterion, device, limit=None, nested=False):
     model.eval()
     losses = []
 
@@ -53,13 +60,20 @@ def evaluate(model, dataloader, criterion, device, limit=None):
     for i, batch in enumerate(pbar):
         if limit and i >= limit: break
 
-        batch = batch.to(device, non_blocking=True)
-        input_ids = batch[:, :-1, ...]
-        target_ids = batch[:, 1:, ...]
+        if nested:
+            batch_list = [t.to(device, non_blocking=True) for t in batch]
+            input_ids = torch.nested.nested_tensor(
+                [t[:-1] for t in batch_list], layout=torch.jagged
+            )
+            target = torch.cat([t[1:] for t in batch_list])
+        else:
+            batch = batch.to(device, non_blocking=True)
+            input_ids = batch[:, :-1, ...]
+            target = batch[:, 1:, ...]
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):
             logits = model(input_ids)
-            loss = criterion(logits, target_ids)
+            loss = criterion(logits, target)
             
         losses.append(loss.item())
 

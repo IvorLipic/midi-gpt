@@ -32,7 +32,7 @@ class RemiTransformerLM(nn.Module):
         master_mask = nn.Transformer.generate_square_subsequent_mask(max_len)
         self.register_buffer("causal_mask", master_mask)
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, **kwargs):
         """
         input_ids: (B, L) int64
         """

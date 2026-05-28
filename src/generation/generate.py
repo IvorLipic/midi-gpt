@@ -16,14 +16,8 @@ def generate(model, prompt, max_new_tokens, device, top_k=None):
 
     for _ in range(max_new_tokens):
         input_ids = tokens.unsqueeze(0)
-        
-        L = input_ids.size(1)
-        mask = torch.triu(
-            torch.full((L, L), float("-inf"), device=device), 
-            diagonal=1
-        )
 
-        logits = model(input_ids, attn_mask=mask)
+        logits = model(input_ids, is_causal=True)
 
         next_logits = apply_top_k(logits[0, -1, :], top_k)
         probs = torch.softmax(next_logits, dim=-1)

@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 4. **Generate MIDI** from checkpoint (picks a random test file as prompt):
    ```
-   python -m src.generate_main --checkpoint src/checkpoints/best.pt --top-k 1 --n-samples 1 [--split pretrain]
+   python -m src.generation.generate_main --checkpoint src/checkpoints/best.pt --top-k 1 --n-samples 1 [--split pretrain]
    ```
    Output: `data/test/generated_{stem}_{mode}_sample{i}.mid`. Auto-generates `len(prompt)` tokens.
 
@@ -53,7 +53,7 @@ pip install -r requirements.txt
 - `src/training/loss.py` — `compute_remi_loss`: NJT-aware — uses `.values()` + flat target with `ignore_index=0` when logits are nested.
 - `src/training/pretrain.py` — Training entrypoint. Nested model: `model.encoder = torch.compile(model.encoder)`. Dense model: `model = torch.compile(model)`.
   - Verified parity (200-sample mini test): dense avg loss ~5.92, nested avg loss ~5.97, ratio 1.0088.
-- `src/generate_main.py` — Generation entrypoint.
+- `src/generation/generate_main.py` — Generation entrypoint.
 - `src/utils/checkpoint.py` — `save_checkpoint()` saves every 10 epochs + updates `best.pt` on lower loss. `load_checkpoint()` uses `weights_only=False`.
 - `src/utils/logging.py` — Thin wrappers around `wandb.init` / `wandb.log`.
 - `src/data/utils.py` — `silence_cpp()` context manager to suppress symusic C-level stdout/stderr.

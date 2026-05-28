@@ -1,39 +1,44 @@
 midi-gpt/
 │
-│
-├── data/
+├── data/                   # NOT TRACKED
 │   ├── GigaMIDI/...        # contains complete and filtered dataset
-│   ├── test/               # model generated midis    
-│   ├── tokens/             # pop909 tokens
+│   ├── test/               # model generated midis   
+│   ├── tokenizers/         # saved MidiTok tokenizer
+│   ├── tokens/
 │   │   ├── remi/
 │   │   ├── remi_8bar/
+│   │   ├── pretrain_remi/...
 │
 ├── src/
 │   ├── data/
 │   │   ├── preprocess_pop909.py
 │   │   ├── tokenize.py
+│   │   ├── tokenizer_utils.py
 │   │   ├── detokenize.py
 │   │   ├── gigamidi_loop_extractor.py
-│   │   ├── GigaMIDI_Metadata_Filtering.ipynb
+│   │   ├── gigamidi_loop_filter.py
+│   │   ├── GigaMIDI_Metadata_Analysis_And_Filtering.ipynb
 │   │   ├── dataset.py
+│   │   ├── utils.py
 │   │
 │   ├── models/
 │   │   ├── remi_transformer.py
 │   │   ├── positional_encoding.py
-|   |   ├── utils.py
+│   │   ├── nested_remi_transformer.py
 │   │
 │   ├── training/
 │   │   ├── trainer.py
 │   │   ├── loss.py
+│   │   ├── pretrain.py
 │   │
 │   ├── generation/
 │   │   ├── generate.py
+│   │   ├── generate_main.py
 │   │
 │   ├── utils/
 │   │   ├── checkpoint.py
 │   │   ├── logging.py
-│   │
-│   ├── generate_main.py        # main generation script
-│   └── main.py                 # main training script
 │
+├── requirements_torch.txt
 ├── requirements.txt
+├── AGENTS.md

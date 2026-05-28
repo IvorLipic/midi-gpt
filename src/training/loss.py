@@ -19,7 +19,6 @@ def compute_octuple_loss(logits_per_field, targets):
 
 def compute_remi_loss(logits, targets):
     if isinstance(logits, torch.Tensor) and logits.is_nested:
-        # logits is NJT, targets is already flat from trainer
         return F.cross_entropy(logits.values(), targets, ignore_index=0)
     return F.cross_entropy(
         logits.reshape(-1, logits.size(-1)),

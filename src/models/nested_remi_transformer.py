@@ -201,22 +201,18 @@ class NestedRemiTransformerLM(nn.Module):
     def forward(self, input_ids, attn_mask=None, is_causal=False):
         """
         Two modes:
-        - Training (NJT): input_ids is an NJT (B, S*) of ints from nested_collate
-        - Generation (dense): input_ids is a dense (B, L) tensor
+        - Training (list): input_ids is a list of (L_i,) 1-D tokens — embed/PE eagerly, create NJT, encoder
+        - Generation (dense): input_ids is dense (B, L) tensor
         """
-        is_njt = isinstance(input_ids, torch.Tensor) and input_ids.is_nested
-
-        if is_njt:
-            # ---- NJT path (training) ----
-            x = self.embed(input_ids) * (self.d_model ** 0.5)  # (B, S*, D) NJT
-            # Positional encoding: NJT can't broadcast with padded PE
-            x_list = x.unbind()
+        if isinstance(input_ids, list):
+            # Training path: embed + PE per-item (eager), then NJT encoder
             pe = self.pos_enc.pe.squeeze(0)
+            x_list = [self.embed(t) * (self.d_model ** 0.5) for t in input_ids]
             x_list = [xi + pe[:xi.size(0)] for xi in x_list]
             x = torch.nested.as_nested_tensor(x_list, layout=torch.jagged)
             x = self.encoder(x, is_causal=True)
         else:
-            # ---- Dense path (generation) ----
+            # Generation path: dense
             x = self.embed(input_ids) * (self.d_model ** 0.5)
             x = self.pos_enc(x)
             x = self.encoder(x, mask=attn_mask, is_causal=is_causal)

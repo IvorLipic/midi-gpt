@@ -131,7 +131,10 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         init_wandb(config)
         run_id = wandb.run.id
     
-    model = torch.compile(model) # Requires triton
+    if is_nested:
+        model.encoder = torch.compile(model.encoder)  # compile heavy encoder, eager PE
+    else:
+        model = torch.compile(model)  # dense: compile full model
 
     signal.signal(signal.SIGINT, handle_interrupt)
 

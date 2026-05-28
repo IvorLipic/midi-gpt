@@ -57,7 +57,7 @@ class NestedMidiDataset(torch.utils.data.Dataset):
 
 
 def nested_collate(batch):
-    """Returns a list of unpadded 1-D tensors (trainer creates NJT after slicing)."""
+    """Returns a list of unpadded 1-D tensors."""
     return batch
 
 

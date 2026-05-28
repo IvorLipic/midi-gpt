@@ -30,7 +30,7 @@ pip install -r requirements.txt
    python -m src.training.pretrain [--split pretrain]
    ```
    Config hardcoded in code: batch_size=32, lr=5e-4, epochs=100, mode=remi. Logs to W&B project `midi-gpt` (W&B required).
-   Uses `torch.compile(model, mode="max-autotune")` + AdamW `fused=True`.
+   Uses `torch.compile` (full model or just encoder for NJT) + AdamW `fused=True`.
    Checkpoints saved to `src/checkpoints/` every 10 epochs + `best.pt` for lowest loss.
    Token path: `data/tokens/{split}-{mode}/train/4-4/`.
 
@@ -46,13 +46,14 @@ pip install -r requirements.txt
 - `src/data/tokenizer_utils.py` — Shared configs + cached `get_tokenizer()` (pickled to `data/tokenizers/`). Also `compute_token_stats()` with `total` field.
 - `src/data/tokenize.py` — REMI/Octuple tokenizer. `tokenize_recursive()` walks the GigaMIDI tree. Supports `--subsets` and `--max-tokens`. `rechunk_tokens()` for 8-bar slicing of legacy flat tokens.
 - `src/data/detokenize.py` — Converts tokens back to MIDI via miditok. Optional `prompt_tokens` builds a 2-track Score.
-- `src/data/dataset.py` — `MidiDataset`: one .npz = one sample. Pad token = 0. `seq_len` computed by scanning all files on startup.
+- `src/data/dataset.py` — `MidiDataset`: one .npz = one sample. Pad token = 0. `seq_len` computed by scanning all files on startup. `NestedMidiDataset`: same but returns unpadded (L_i,) tensors. `nested_collate`: returns batch as a list of tensors (no padding).
 - `src/models/remi_transformer.py` — `TransformerEncoder`-based (causal via `is_causal=True`). d_model=512, 8 layers, 8 heads, FF=2048.
 - `src/models/octuple_transformer.py` — Same pattern but sums per-field embeddings. d_model=256, 4 layers, 4 heads, FF=512.
+- `src/models/nested_remi_transformer.py` — NJT variant of REMI. Training path: accepts list of (L_i,) tokens, embeds each + adds PE eagerly, creates contiguous NJT via `as_nested_tensor`, then encoder. Generation path: dense tensor (same as remi). Encoder is `torch.compile`'d separately; PE step runs in eager to avoid PyTorch 2.11 compile bugs with NJT creation. SDPA backward on contiguous NJT works in PyTorch 2.11.
 - `src/generation/generate.py` — Autoregressive top-k sampling. No KV-cache.
-- `src/training/trainer.py` — Slices `batch[:, :-1]` / `batch[:, 1:]` for next-token prediction. Uses bfloat16 AMP.
-- `src/training/loss.py` — `compute_remi_loss` (single CE) and `compute_octuple_loss` (mean CE across fields). Both `ignore_index=0`.
-- `src/training/pretrain.py` — Training entrypoint. `torch.compile` + Flash Attention sdpa kernel.
+- `src/training/trainer.py` — NJT path (nested=True): batch is list of (L_i,) tensors, slices per-item, creates flat `target = torch.cat([t[1:]...])`, passes `input_list` to model. Dense path: slices `batch[:, :-1]` / `batch[:, 1:]`.
+- `src/training/loss.py` — `compute_remi_loss`: NJT-aware — uses `.values()` + flat target with `ignore_index=0` when logits are nested. `compute_octuple_loss`: mean CE across fields.
+- `src/training/pretrain.py` — Training entrypoint. Nested model: `model.encoder = torch.compile(model.encoder)`. Dense model: `model = torch.compile(model)`.
 - `src/generate_main.py` — Generation entrypoint.
 - `src/utils/checkpoint.py` — `save_checkpoint()` saves every 10 epochs + updates `best.pt` on lower loss. `load_checkpoint()` uses `weights_only=False`.
 - `src/utils/logging.py` — Thin wrappers around `wandb.init` / `wandb.log`.
@@ -67,6 +68,8 @@ pip install -r requirements.txt
 - **bfloat16 AMP** in trainer — requires compatible GPU (CUDA). Falls back otherwise.
 - **AdamW `fused=True`** in optimizer — requires CUDA.
 - **`silence_cpp()`** wraps `Score()` calls in tokenization to suppress symusic C-level output.
+- **NJT contiguous requirement**: `torch.nested.narrow` creates non-contiguous NJT → fails with `F.linear`. Always use `torch.nested.as_nested_tensor(list, layout=torch.jagged)` for contiguous NJT that supports linear/SDPA backward.
+- **`torch.compile` + NJT**: creating NJT inside a compiled function crashes PyTorch 2.11 (InternalTorchDynamoError with shape env guards). Workaround: embed/PE/NJT creation runs in eager, only `model.encoder` is compiled separately.
 - **No `__init__.py` files** in `src/` — Python 3.13 implicit namespace packages work fine.
 - **No test/lint/typecheck infrastructure** — no CI, no pytest, no mypy, no ruff. Only validation is running scripts directly.
 - `.gitignore` excludes `/data/`, `wandb/`, and `src/checkpoints/*.pt` (directory tracked via `.gitkeep`).

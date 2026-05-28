@@ -12,12 +12,10 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
     pbar = tqdm(train_loader, desc="Training")
     for i, batch in enumerate(pbar):
         if nested:
-            # NJT path: batch is list of unpadded (L_i,) tensors
-            batch_list = [t.to(device, non_blocking=True) for t in batch]
-            input_ids = torch.nested.nested_tensor(
-                [t[:-1] for t in batch_list], layout=torch.jagged
-            )
-            target = torch.cat([t[1:] for t in batch_list])
+            # NJT path: batch is a list of (L_i,) tensors
+            batch = [t.to(device, non_blocking=True) for t in batch]
+            input_list = [t[:-1] for t in batch]
+            target = torch.cat([t[1:] for t in batch])
         else:
             batch = batch.to(device, non_blocking=True)
             # REMI: (B, L) | Octuple: (B, L, F)
@@ -25,8 +23,12 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
             target = batch[:, 1:, ...]
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):
-            logits = model(input_ids)
-            loss = criterion(logits, target)
+            if nested:
+                logits = model(input_list)
+                loss = criterion(logits, target)
+            else:
+                logits = model(input_ids)
+                loss = criterion(logits, target)
             loss_scaled = loss / accum_steps
                     
         loss_scaled.backward()
@@ -61,19 +63,21 @@ def evaluate(model, dataloader, criterion, device, limit=None, nested=False):
         if limit and i >= limit: break
 
         if nested:
-            batch_list = [t.to(device, non_blocking=True) for t in batch]
-            input_ids = torch.nested.nested_tensor(
-                [t[:-1] for t in batch_list], layout=torch.jagged
-            )
-            target = torch.cat([t[1:] for t in batch_list])
+            batch = [t.to(device, non_blocking=True) for t in batch]
+            input_list = [t[:-1] for t in batch]
+            target = torch.cat([t[1:] for t in batch])
         else:
             batch = batch.to(device, non_blocking=True)
             input_ids = batch[:, :-1, ...]
             target = batch[:, 1:, ...]
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):
-            logits = model(input_ids)
-            loss = criterion(logits, target)
+            if nested:
+                logits = model(input_list)
+                loss = criterion(logits, target)
+            else:
+                logits = model(input_ids)
+                loss = criterion(logits, target)
             
         losses.append(loss.item())
 

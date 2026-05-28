@@ -9,10 +9,9 @@ from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 from src.data.dataset import MidiDataset, NestedMidiDataset, nested_collate
 from src.data.tokenizer_utils import get_tokenizer
 from src.models.remi_transformer import RemiTransformerLM 
-from src.models.octuple_transformer import OctupleTransformerLM
 from src.models.nested_remi_transformer import NestedRemiTransformerLM
 from src.training.trainer import train_epoch, evaluate
-from src.training.loss import compute_octuple_loss, compute_remi_loss
+from src.training.loss import compute_remi_loss
 from src.utils.logging import init_wandb, log
 from src.utils.checkpoint import save_checkpoint
 
@@ -84,20 +83,12 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
             vocab_size=tokenizer.vocab_size,
             max_len=config["seq_len"]
         ).to(DEVICE)
-        criterion = compute_remi_loss
-    elif config["mode"] == "remi":
+    else:
         model = RemiTransformerLM(
             vocab_size=tokenizer.vocab_size,
             max_len=config["seq_len"]
         ).to(DEVICE)    
-        criterion = compute_remi_loss
-    else:
-        vocab_sizes = [len(v) for v in tokenizer.vocab]
-        model = OctupleTransformerLM(
-            vocab_sizes_per_field=vocab_sizes,
-            max_len=config["seq_len"]
-        ).to(DEVICE)
-        criterion = compute_octuple_loss
+    criterion = compute_remi_loss
         
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=0.01, fused=True)
 

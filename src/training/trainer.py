@@ -18,7 +18,7 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
             target = torch.cat([t[1:] for t in batch])
         else:
             batch = batch.to(device, non_blocking=True)
-            # REMI: (B, L) | Octuple: (B, L, F)
+            # (B, L)
             input_ids = batch[:, :-1, ...]
             target = batch[:, 1:, ...]
             src_key_padding_mask = (input_ids == 0)

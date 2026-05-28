@@ -2,7 +2,7 @@
 
 ## Project
 GPT-style MIDI generator: takes a 4-bar prompt, generates a 4-bar continuation (8 bars total). Output MIDI has 2 tracks: "Generated" and "Prompt".
-Two tokenization modes: **REMI** (single-token) and **Octuple** (multi-field per timestep).
+Tokenization mode: **REMI** (single-token).
 Data lives in `data/GigaMIDI/filtered_loops_v1/{pretrain|sft_mono|sft_poly}/{train|test|validation}/4-4/*.mid`.
 
 ## Pipeline & Commands
@@ -18,7 +18,6 @@ pip install -r requirements.txt
 2. **Tokenize** preprocessed MIDIs → .npz files (preserves directory structure):
    ```
    python -m src.data.tokenize --mode remi --gigamidi [--subsets pretrain,sft_mono --max-tokens 1536]
-   python -m src.data.tokenize --mode octuple --gigamidi
    ```
    `--subsets` filters which of `pretrain,sft_mono,sft_poly` to process (default: all). `--max-tokens` skips sequences exceeding the limit (default: 1536).
    Output: `data/tokens/{split}-{mode}/{subset}/4-4/{stem}.npz`. Each file = one 8-bar loop.
@@ -44,15 +43,14 @@ pip install -r requirements.txt
 - `src/data/gigamidi_loop_extractor.py` — Reads filtered metadata CSV, validates 8-bar loops (32-beat ±0.5, single TS with denom=4, non-drum, ≥10 notes), extracts to `data/GigaMIDI/extracted_loops_v1/`. Parallel via `mp.Pool`.
 - `src/data/gigamidi_loop_filter.py` — 12 quality metrics (adapted from muspy) on extracted 4/4 loops. Two-phase: `compute` writes enriched CSV, `filter` applies thresholds and copies to `filtered_loops_v1/`.
 - `src/data/tokenizer_utils.py` — Shared configs + cached `get_tokenizer()` (pickled to `data/tokenizers/`). Also `compute_token_stats()` with `total` field.
-- `src/data/tokenize.py` — REMI/Octuple tokenizer. `tokenize_recursive()` walks the GigaMIDI tree. Supports `--subsets` and `--max-tokens`. `rechunk_tokens()` for 8-bar slicing of legacy flat tokens.
+- `src/data/tokenize.py` — REMI tokenizer. `tokenize_recursive()` walks the GigaMIDI tree. Supports `--subsets` and `--max-tokens`. `rechunk_tokens()` for 8-bar slicing of legacy flat tokens.
 - `src/data/detokenize.py` — Converts tokens back to MIDI via miditok. Optional `prompt_tokens` builds a 2-track Score.
 - `src/data/dataset.py` — `MidiDataset`: one .npz = one sample. Pad token = 0. `seq_len` computed by scanning all files on startup. `NestedMidiDataset`: same but returns unpadded (L_i,) tensors. `nested_collate`: returns batch as a list of tensors (no padding).
 - `src/models/remi_transformer.py` — `TransformerEncoder`-based (causal via `is_causal=True`). d_model=512, 8 layers, 8 heads, FF=2048.
-- `src/models/octuple_transformer.py` — Same pattern but sums per-field embeddings. d_model=256, 4 layers, 4 heads, FF=512.
 - `src/models/nested_remi_transformer.py` — NJT variant of REMI. Training path: accepts list of (L_i,) tokens, embeds each + adds PE eagerly, creates contiguous NJT via `as_nested_tensor`, then encoder. Generation path: dense tensor (same as remi). Encoder is `torch.compile`'d separately; PE step runs in eager to avoid PyTorch 2.11 compile bugs with NJT creation. SDPA backward on contiguous NJT works in PyTorch 2.11.
 - `src/generation/generate.py` — Autoregressive top-k sampling. No KV-cache.
 - `src/training/trainer.py` — NJT path (nested=True): batch is list of (L_i,) tensors, slices per-item, creates flat `target = torch.cat([t[1:]...])`, passes `input_list` to model. Dense path: slices `batch[:, :-1]` / `batch[:, 1:]`.
-- `src/training/loss.py` — `compute_remi_loss`: NJT-aware — uses `.values()` + flat target with `ignore_index=0` when logits are nested. `compute_octuple_loss`: mean CE across fields.
+- `src/training/loss.py` — `compute_remi_loss`: NJT-aware — uses `.values()` + flat target with `ignore_index=0` when logits are nested.
 - `src/training/pretrain.py` — Training entrypoint. Nested model: `model.encoder = torch.compile(model.encoder)`. Dense model: `model = torch.compile(model)`.
   - Verified parity (200-sample mini test): dense avg loss ~5.92, nested avg loss ~5.97, ratio 1.0088.
 - `src/generate_main.py` — Generation entrypoint.
@@ -62,8 +60,7 @@ pip install -r requirements.txt
 
 ## Key Conventions & Gotchas
 - **Pad token = 0** everywhere (loss `ignore_index=0`, dataset pad `value=0`).
-- **REMI**: single vocab, `tokenizer.vocab_size`, bar token `Bar_None`.
-  **Octuple**: `tokenizer.vocab` is a **list** of vocab sizes per field. Bar detection: `tokens[:, 0] < 4`.
+- **Vocab**: `tokenizer.vocab_size`, bar token `Bar_None`.
 - **W&B required**: `wandb.init()` called unconditionally — train will fail if not logged in.
 - **`weights_only=False`** in `load_checkpoint()` — allows pickle, intentional.
 - **Pre-LN architecture**: Both dense and nested models use Pre-LN (`norm_first=True`) with a final `nn.LayerNorm` before the LM head.

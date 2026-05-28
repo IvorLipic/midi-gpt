@@ -6,7 +6,6 @@ midi-gpt/
 │   ├── test/               # model generated midis    
 │   ├── tokens/             # pop909 tokens
 │   │   ├── remi/
-│   │   ├── octuple/
 │   │   ├── remi_8bar/
 │
 ├── src/
@@ -20,7 +19,6 @@ midi-gpt/
 │   │
 │   ├── models/
 │   │   ├── remi_transformer.py
-│   │   ├── octuple_transformer.py
 │   │   ├── positional_encoding.py
 |   |   ├── utils.py
 │   │

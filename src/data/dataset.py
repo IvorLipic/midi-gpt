@@ -24,10 +24,7 @@ class MidiDataset(torch.utils.data.Dataset):
 
         if tokens.shape[0] < self.max_seq_len:
             padding_size = self.max_seq_len - tokens.shape[0]
-            if tokens.dim() == 1:
-                tokens = torch.nn.functional.pad(tokens, (0, padding_size), value=0)
-            else:
-                tokens = torch.nn.functional.pad(tokens, (0, 0, 0, padding_size), value=0)
+            tokens = torch.nn.functional.pad(tokens, (0, padding_size), value=0)
 
         return tokens
 

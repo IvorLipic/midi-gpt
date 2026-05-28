@@ -131,13 +131,8 @@ def tokenize_recursive(mode, input_root, output_root, cache_dir=None, subsets=No
 
 def slice_into_8bar_chunks(token_path, tokenizer, suffix="remi"):
     tokens = token_path["tokens"]
-    mode = "remi" if hasattr(tokenizer, "vocab_size") else "octuple"
-
-    if mode == "remi":
-        bar_token_id = tokenizer.vocab["Bar_None"]
-        bar_positions = np.where(tokens == bar_token_id)[0]
-    else:
-        bar_positions = np.where(tokens[:, 0] == 0)[0]
+    bar_token_id = tokenizer.vocab["Bar_None"]
+    bar_positions = np.where(tokens == bar_token_id)[0]
 
     if len(bar_positions) == 0:
         return [tokens]

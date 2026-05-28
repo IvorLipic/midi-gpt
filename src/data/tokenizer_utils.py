@@ -3,7 +3,7 @@ import pickle
 import json
 import numpy as np
 from tqdm import tqdm
-from miditok import REMI, Octuple, TokenizerConfig
+from miditok import REMI, TokenizerConfig
 
 CONFIG_REMI = TokenizerConfig(
     use_chords=False,
@@ -16,18 +16,6 @@ CONFIG_REMI = TokenizerConfig(
     use_programs=False,
 )
 
-CONFIG_OCT = TokenizerConfig(
-    use_chords=False,
-    use_rests=False,
-    use_tempos=False,
-    use_time_signatures=False,
-    beat_res={(0, 4): 16},
-    num_velocities=32,
-    use_velocities=True,
-    use_programs=False,
-)
-CONFIG_OCT.additional_params["max_bar_embedding"] = 64
-
 TOKENIZER_CACHE_DIR = Path("data/tokenizers")
 
 
@@ -35,7 +23,7 @@ def _cache_path(mode: str) -> Path:
     return TOKENIZER_CACHE_DIR / f"{mode}_tokenizer.pkl"
 
 
-def get_tokenizer(mode: str = "remi") -> REMI | Octuple:
+def get_tokenizer(mode: str = "remi") -> REMI:
     cache = _cache_path(mode)
     if cache.exists():
         with open(cache, "rb") as f:
@@ -43,8 +31,6 @@ def get_tokenizer(mode: str = "remi") -> REMI | Octuple:
 
     if mode == "remi":
         tok = REMI(CONFIG_REMI)
-    elif mode == "octuple":
-        tok = Octuple(CONFIG_OCT)
     else:
         raise ValueError(f"Unknown mode: {mode}")
 

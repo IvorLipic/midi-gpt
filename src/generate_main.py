@@ -9,7 +9,6 @@ from src.data.detokenize import detokenize
 from src.generation.generate import generate
 from src.utils.checkpoint import load_checkpoint
 from src.models.remi_transformer import RemiTransformerLM
-from src.models.octuple_transformer import OctupleTransformerLM
 from src.models.nested_remi_transformer import NestedRemiTransformerLM
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -46,15 +45,9 @@ def main(checkpoint_path=None, top_k=40, n_samples=1, split="pretrain"):
             vocab_size=tokenizer.vocab_size,
             max_len=config["seq_len"],
         ).to(DEVICE)
-    elif mode == "remi":
+    else:
         model = RemiTransformerLM(
             vocab_size=tokenizer.vocab_size,
-            max_len=config["seq_len"],
-        ).to(DEVICE)
-    else:
-        vocab_sizes = [len(v) for v in tokenizer.vocab]
-        model = OctupleTransformerLM(
-            vocab_sizes_per_field=vocab_sizes,
             max_len=config["seq_len"],
         ).to(DEVICE)
 
@@ -74,12 +67,7 @@ def main(checkpoint_path=None, top_k=40, n_samples=1, split="pretrain"):
     data = np.load(sample_path)
     tokens = torch.from_numpy(data["tokens"]).long()
 
-    if mode == "remi":
-        prompt = get_4_bar_prompt(tokens, tokenizer)
-    else:
-        bar_field = tokens[:, 0]
-        bar_mask = bar_field < 4
-        prompt = tokens[bar_mask]
+    prompt = get_4_bar_prompt(tokens, tokenizer)
 
     max_new_tokens = len(prompt)
     stem = Path(sample_path).stem

@@ -9,6 +9,7 @@ from src.data.detokenize import detokenize
 from src.generation.generate import generate
 from src.utils.checkpoint import load_checkpoint
 from src.models.remi_transformer import RemiTransformerLM
+from src.models.hf_remi_transformer import HFRemiGPT
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -34,14 +35,21 @@ def main(checkpoint_path=None, top_k=40, n_samples=1, split="pretrain"):
     checkpoint = load_checkpoint(checkpoint_path, device=DEVICE)
     config = checkpoint["config"]
     mode = config["mode"]
+    model_type = config.get("model_type", mode)
     split = config.get("split", split)
 
     tokenizer = get_tokenizer(mode)
 
-    model = RemiTransformerLM(
-        vocab_size=tokenizer.vocab_size,
-        max_len=config["seq_len"],
-    ).to(DEVICE)
+    if model_type == "hf_remi":
+        model = HFRemiGPT(
+            vocab_size=tokenizer.vocab_size,
+            max_len=config["seq_len"],
+        ).to(DEVICE)
+    else:
+        model = RemiTransformerLM(
+            vocab_size=tokenizer.vocab_size,
+            max_len=config["seq_len"],
+        ).to(DEVICE)
 
     model.load_state_dict(checkpoint["model_state_dict"], strict=False)
     model.eval()

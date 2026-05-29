@@ -17,7 +17,7 @@ def generate(model, prompt, max_new_tokens, device, top_k=None):
     for _ in range(max_new_tokens):
         input_ids = tokens.unsqueeze(0)
 
-        logits = model(input_ids, is_causal=True)
+        logits = model(input_ids)
 
         next_logits = apply_top_k(logits[0, -1, :], top_k)
         probs = torch.softmax(next_logits, dim=-1)

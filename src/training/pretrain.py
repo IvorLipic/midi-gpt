@@ -9,6 +9,7 @@ from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 from src.data.dataset import MidiDataset, collate_pad_to_longest
 from src.data.tokenizer_utils import get_tokenizer
 from src.models.remi_transformer import RemiTransformerLM
+from src.models.hf_remi_transformer import HFRemiGPT
 from src.training.trainer import train_epoch, evaluate
 from src.training.loss import compute_remi_loss
 from src.utils.logging import init_wandb, log
@@ -45,6 +46,7 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         "epochs": 5,
         "lr": 1e-4,
         "mode": "remi",
+        "model_type": "hf_remi",
         "split": split,
     }
 
@@ -63,10 +65,16 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
 
     print(f"Vocab size: {tokenizer.vocab_size}, Train Batches: {len(train_loader)}, Val Batches: {len(val_loader)}, Test Batches: {len(test_loader)}")
 
-    model = RemiTransformerLM(
-        vocab_size=tokenizer.vocab_size,
-        max_len=config["seq_len"]
-    ).to(DEVICE)    
+    if config["model_type"] == "hf_remi":
+        model = HFRemiGPT(
+            vocab_size=tokenizer.vocab_size,
+            max_len=config["seq_len"]
+        ).to(DEVICE)
+    else:
+        model = RemiTransformerLM(
+            vocab_size=tokenizer.vocab_size,
+            max_len=config["seq_len"]
+        ).to(DEVICE)    
     criterion = compute_remi_loss
         
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=0.01, fused=True)
@@ -89,6 +97,9 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint from {checkpoint_path}...")
         checkpoint = torch.load(checkpoint_path)
+        ckpt_model_type = checkpoint["config"].get("model_type", "remi")
+        if ckpt_model_type != config["model_type"]:
+            print(f"[!] Warning: checkpoint model_type='{ckpt_model_type}' != current model_type='{config["model_type"]}'")
         model.load_state_dict(checkpoint["model_state_dict"], strict=False)
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
@@ -109,10 +120,12 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         if stop_training: break
         print(f"\n--- Epoch {epoch} ---")
 
-        avg_train_loss = train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, DEVICE, accum_steps)
+        avg_train_loss = train_epoch(model=model, train_loader=train_loader, val_loader=val_loader, 
+                                     optimizer=optimizer, scheduler=scheduler, criterion=criterion, 
+                                     device=DEVICE, accum_steps=accum_steps, eval_interval=4000, model_type=config["model_type"])
         
         print("Running full test evaluation...")
-        test_loss = evaluate(model, test_loader, criterion, DEVICE)
+        test_loss = evaluate(model=model, dataloader=test_loader, criterion=criterion, device=DEVICE, limit=None, model_type=config["model_type"])
 
         print(f"Epoch {epoch} complete. Test Loss: {test_loss:.4f}")
             

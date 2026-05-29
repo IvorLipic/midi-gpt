@@ -48,6 +48,7 @@ pip install -r requirements.txt
 - `src/data/detokenize.py` — Converts tokens back to MIDI via miditok. Optional `prompt_tokens` builds a 2-track Score.
 - `src/data/dataset.py` — Single `MidiDataset`: returns raw unpadded (L_i,) tensors (truncated if > `max_seq_len`). `collate_pad_to_longest` pads each batch to its longest sequence, returns dict with pre-split `inputs`/`targets`. Pad token = 0 everywhere.
 - `src/models/remi_transformer.py` — `TransformerEncoder`-based (causal via `is_causal=True`). d_model=512, 8 layers, 8 heads, FF=2048.
+- `src/models/hf_remi_transformer.py` — `HFRemiGPT`: HuggingFace GPT2LMHeadModel wrapper. Accepts `attention_mask` (1=real, 0=padding). Uses `GPTStyleEmbedding`. Plug-in replacement for `RemiTransformerLM` — set `model_type: "hf_remi"` in config.
 - `src/generation/generate.py` — Autoregressive top-k sampling. No KV-cache.
 - `src/training/trainer.py` — Receives dict `{'inputs', 'targets'}` from `collate_pad_to_longest`, uses `inputs` directly, `src_key_padding_mask=(inputs == 0)`.
 - `src/training/loss.py` — `compute_remi_loss`: flat CE with `ignore_index=0`.

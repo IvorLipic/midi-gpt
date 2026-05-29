@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from src.models.positional_encoding import PositionalEncoding
+from src.models.positional_encoding import AbsolutePositionalEncoding, GPTStyleEmbedding
 
 class RemiTransformerLM(nn.Module):
     def __init__(
@@ -17,8 +17,9 @@ class RemiTransformerLM(nn.Module):
         self.vocab_size = vocab_size
         self.d_model = d_model
 
-        self.embed = nn.Embedding(vocab_size, d_model)
-        self.pos_enc = PositionalEncoding(d_model, max_len=max_len)
+        self.embed = GPTStyleEmbedding(vocab_size=vocab_size, d_model=d_model, max_len=max_len)
+        #self.embed = nn.Embedding(vocab_size, d_model)
+        #self.pos_enc = AbsolutePositionalEncoding(d_model, max_len=max_len)
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
@@ -33,7 +34,8 @@ class RemiTransformerLM(nn.Module):
             num_layers=n_layers,
             norm=nn.LayerNorm(d_model),
         )
-        self.lm_head = nn.Linear(d_model, vocab_size)
+        self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
+        self.lm_head.weight = self.embed.token_embed.weight
 
         mask = torch.triu(torch.ones(max_len, max_len, dtype=torch.bool), diagonal=1)
         self.register_buffer("causal_mask", mask)
@@ -46,8 +48,9 @@ class RemiTransformerLM(nn.Module):
         seq_len = input_ids.size(1)
         mask = self.causal_mask[:seq_len, :seq_len]
 
-        x = self.embed(input_ids) * (self.d_model ** 0.5)
-        x = self.pos_enc(x)
+        #x = self.embed(input_ids)
+        #x = self.pos_enc(x)
+        x = self.embed(input_ids)
         x = self.encoder(x, mask=mask, src_key_padding_mask=src_key_padding_mask, is_causal=True)
         logits = self.lm_head(x)  # (B, L, vocab_size)
         return logits

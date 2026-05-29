@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-class PositionalEncoding(nn.Module):
+class AbsolutePositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=4096):
         super().__init__()
         pe = torch.zeros(max_len, d_model)
@@ -19,3 +19,19 @@ class PositionalEncoding(nn.Module):
         # x: (B, L, D)
         L = x.size(1)
         return x + self.pe[:, :L]
+    
+class GPTStyleEmbedding(nn.Module):
+    def __init__(self, vocab_size, d_model, max_len):
+        super().__init__()
+        self.token_embed = nn.Embedding(vocab_size, d_model)
+        self.pos_embed = nn.Embedding(max_len, d_model)
+
+    def forward(self, x):
+        L = x.size(1)
+
+        tok = self.token_embed(x)
+
+        pos = torch.arange(L, device=x.device)
+        pos = self.pos_embed(pos).unsqueeze(0)  # (1, L, D)
+
+        return tok + pos

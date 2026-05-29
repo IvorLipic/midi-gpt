@@ -24,7 +24,6 @@ midi-gpt/
 │   ├── models/
 │   │   ├── remi_transformer.py
 │   │   ├── positional_encoding.py
-│   │   ├── nested_remi_transformer.py
 │   │
 │   ├── training/
 │   │   ├── trainer.py

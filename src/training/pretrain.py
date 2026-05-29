@@ -6,10 +6,9 @@ import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
-from src.data.dataset import MidiDataset, nested_collate, collate_pad_to_longest
+from src.data.dataset import MidiDataset, collate_pad_to_longest
 from src.data.tokenizer_utils import get_tokenizer
-from src.models.remi_transformer import RemiTransformerLM 
-from src.models.nested_remi_transformer import NestedRemiTransformerLM
+from src.models.remi_transformer import RemiTransformerLM
 from src.training.trainer import train_epoch, evaluate
 from src.training.loss import compute_remi_loss
 from src.utils.logging import init_wandb, log
@@ -24,14 +23,13 @@ def handle_interrupt(sig, frame):
     print("\n[!] Caught interrupt! Exiting gracefully...")
     stop_training = True
 
-def create_dataloader(folder, seq_len, batch_size, shuffle=True, nested=False):
+def create_dataloader(folder, seq_len, batch_size, shuffle=True):
     dataset = MidiDataset(folder, max_seq_len=seq_len)
-    collate_fn = nested_collate if nested else collate_pad_to_longest
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=collate_fn,
+        collate_fn=collate_pad_to_longest,
         pin_memory=True,
         num_workers=4,
         persistent_workers=True,
@@ -47,7 +45,6 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         "epochs": 5,
         "lr": 1e-4,
         "mode": "remi",
-        "model_type": "remi",
         "split": split,
     }
 
@@ -58,26 +55,18 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
     val_folder = f"{base_data_path}/validation/4-4"
     test_folder = f"{base_data_path}/test/4-4"
 
-    is_nested = config.get("model_type") == "nested_remi"
+    train_loader = create_dataloader(train_folder, config["seq_len"], config["batch_size"], shuffle=True)
 
-    train_loader = create_dataloader(train_folder, config["seq_len"], config["batch_size"], shuffle=True, nested=is_nested)
+    val_loader = create_dataloader(val_folder, config["seq_len"], config["batch_size"], shuffle=False)
 
-    val_loader = create_dataloader(val_folder, config["seq_len"], config["batch_size"], shuffle=False, nested=is_nested)
-
-    test_loader = create_dataloader(test_folder, config["seq_len"], config["batch_size"], shuffle=False, nested=is_nested)
+    test_loader = create_dataloader(test_folder, config["seq_len"], config["batch_size"], shuffle=False)
 
     print(f"Vocab size: {tokenizer.vocab_size}, Train Batches: {len(train_loader)}, Val Batches: {len(val_loader)}, Test Batches: {len(test_loader)}")
 
-    if is_nested:
-        model = NestedRemiTransformerLM(
-            vocab_size=tokenizer.vocab_size,
-            max_len=config["seq_len"]
-        ).to(DEVICE)
-    else:
-        model = RemiTransformerLM(
-            vocab_size=tokenizer.vocab_size,
-            max_len=config["seq_len"]
-        ).to(DEVICE)    
+    model = RemiTransformerLM(
+        vocab_size=tokenizer.vocab_size,
+        max_len=config["seq_len"]
+    ).to(DEVICE)    
     criterion = compute_remi_loss
         
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=0.01, fused=True)
@@ -112,10 +101,7 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         init_wandb(config)
         run_id = wandb.run.id
     
-    if is_nested:
-        model.encoder = torch.compile(model.encoder)  # compile heavy encoder, eager PE
-    else:
-        model = torch.compile(model)  # dense: compile full model
+    model = torch.compile(model)
 
     signal.signal(signal.SIGINT, handle_interrupt)
 
@@ -123,10 +109,10 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         if stop_training: break
         print(f"\n--- Epoch {epoch} ---")
 
-        avg_train_loss = train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, DEVICE, accum_steps, nested=is_nested)
+        avg_train_loss = train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, DEVICE, accum_steps)
         
         print("Running full test evaluation...")
-        test_loss = evaluate(model, test_loader, criterion, DEVICE, nested=is_nested)
+        test_loss = evaluate(model, test_loader, criterion, DEVICE)
 
         print(f"Epoch {epoch} complete. Test Loss: {test_loss:.4f}")
             

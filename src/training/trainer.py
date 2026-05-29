@@ -3,7 +3,7 @@ from tqdm import tqdm
 from torch.amp import autocast
 from src.utils.logging import log
 
-def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, device, accum_steps=2, eval_interval=4000, nested=False):
+def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion, device, accum_steps=2, eval_interval=4000):
     model.train()
     total_loss = 0
 
@@ -11,23 +11,13 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
 
     pbar = tqdm(train_loader, desc="Training")
     for i, batch in enumerate(pbar):
-        if nested:
-            # NJT path: batch is a list of (L_i,) tensors
-            batch = [t.to(device, non_blocking=True) for t in batch]
-            input_list = [t[:-1] for t in batch]
-            target = torch.cat([t[1:] for t in batch])
-        else:
-            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-            input_ids, target = batch['inputs'], batch['targets']
-            src_key_padding_mask = (input_ids == 0)
+        batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+        input_ids, target = batch['inputs'], batch['targets']
+        src_key_padding_mask = (input_ids == 0)
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):
-            if nested:
-                logits = model(input_list)
-                loss = criterion(logits, target)
-            else:
-                logits = model(input_ids, src_key_padding_mask=src_key_padding_mask)
-                loss = criterion(logits, target)
+            logits = model(input_ids, src_key_padding_mask=src_key_padding_mask)
+            loss = criterion(logits, target)
             loss_scaled = loss / accum_steps
                     
         loss_scaled.backward()
@@ -44,7 +34,7 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
 
         # Periodic Evaluation
         if (i + 1) % eval_interval == 0:
-            val_loss = evaluate(model, val_loader, criterion, device, limit=None, nested=nested)
+            val_loss = evaluate(model, val_loader, criterion, device)
             log({"val/step_loss": val_loss})
             model.train()
             
@@ -53,7 +43,7 @@ def train_epoch(model, train_loader, val_loader, optimizer, scheduler, criterion
     return total_loss / len(train_loader)
 
 @torch.no_grad()
-def evaluate(model, dataloader, criterion, device, limit=None, nested=False):
+def evaluate(model, dataloader, criterion, device, limit=None):
     model.eval()
     losses = []
 
@@ -61,22 +51,13 @@ def evaluate(model, dataloader, criterion, device, limit=None, nested=False):
     for i, batch in enumerate(pbar):
         if limit and i >= limit: break
 
-        if nested:
-            batch = [t.to(device, non_blocking=True) for t in batch]
-            input_list = [t[:-1] for t in batch]
-            target = torch.cat([t[1:] for t in batch])
-        else:
-            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-            input_ids, target = batch['inputs'], batch['targets']
-            src_key_padding_mask = (input_ids == 0)
+        batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+        input_ids, target = batch['inputs'], batch['targets']
+        src_key_padding_mask = (input_ids == 0)
 
         with autocast(device_type=device.type, dtype=torch.bfloat16):
-            if nested:
-                logits = model(input_list)
-                loss = criterion(logits, target)
-            else:
-                logits = model(input_ids, src_key_padding_mask=src_key_padding_mask)
-                loss = criterion(logits, target)
+            logits = model(input_ids, src_key_padding_mask=src_key_padding_mask)
+            loss = criterion(logits, target)
             
         losses.append(loss.item())
 

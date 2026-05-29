@@ -34,13 +34,13 @@ class RemiTransformerLM(nn.Module):
             num_layers=n_layers,
             norm=nn.LayerNorm(d_model),
         )
+
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
-        self.lm_head.weight = self.embed.token_embed.weight
 
         mask = torch.triu(torch.ones(max_len, max_len, dtype=torch.bool), diagonal=1)
         self.register_buffer("causal_mask", mask)
 
-    def forward(self, input_ids, src_key_padding_mask=None, **kwargs):
+    def forward(self, input_ids, src_key_padding_mask=None):
         """
         input_ids: (B, L) int64
         src_key_padding_mask: (B, L) bool, True = padding positions to mask

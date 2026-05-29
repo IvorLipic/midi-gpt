@@ -26,9 +26,13 @@ class MidiDataset(torch.utils.data.Dataset):
         return tokens
 
 
-def nested_collate(batch):
-    return batch
+BUCKETS = [64, 128, 256, 512, 1024, 1536]
 
+def _round_to_bucket(n):
+    for b in BUCKETS:
+        if n <= b:
+            return b
+    return BUCKETS[-1]
 
 def pad_sequence(seq, max_len, pad_id=0):
     pad_size = max_len - seq.shape[0]
@@ -36,7 +40,7 @@ def pad_sequence(seq, max_len, pad_id=0):
 
 
 def collate_pad_to_longest(batch, pad_id=0):
-    max_len = max(t.shape[0] - 1 for t in batch)
+    max_len = _round_to_bucket(max(t.shape[0] - 1 for t in batch))
     inputs, targets = [], []
     for t in batch:
         inputs.append(pad_sequence(t[:-1], max_len, pad_id))

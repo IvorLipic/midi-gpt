@@ -14,6 +14,7 @@ CONFIG_REMI = TokenizerConfig(
     num_velocities=32,
     use_velocities=True,
     use_programs=False,
+    use_pitchdrum_tokens=False
 )
 
 TOKENIZER_CACHE_DIR = Path("data/tokenizers")

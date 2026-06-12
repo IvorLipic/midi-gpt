@@ -2,3 +2,5 @@
     - set top_k = 0 (disabled)
     - top-p -> use a value like 0.90, it protects music from structural breakdown
     - temperature -> 0.8 to 1, primary tool for controlling how "experimental" or "conservative" the composition is
+
+- Add custom MIDIs to eval and log them to W&B

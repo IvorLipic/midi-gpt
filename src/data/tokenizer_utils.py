@@ -2,6 +2,7 @@ from pathlib import Path
 import pickle
 import json
 import numpy as np
+import torch
 from tqdm import tqdm
 from miditok import REMI, TokenizerConfig
 
@@ -72,3 +73,12 @@ def compute_token_stats(folder: str | Path) -> dict:
         json.dump(stats, f, indent=2)
 
     return stats
+
+
+def get_4_bar_prompt(tokens, tokenizer):
+    bar_token_id = tokenizer.vocab["Bar_None"]
+    bar_positions = (tokens == bar_token_id).nonzero(as_tuple=True)[0]
+
+    if len(bar_positions) >= 5:
+        return tokens[:bar_positions[4] + 1]
+    return torch.cat([tokens, tokens.new_tensor([bar_token_id])])

@@ -43,7 +43,7 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
         "batch_size": 24,
         "effective_batch_size": 48,
         "seq_len": 1536,
-        "epochs": 5,
+        "epochs": 1,
         "lr": 1e-4,
         "mode": "remi",
         "model_type": "hf_remi",
@@ -81,7 +81,7 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
 
     accum_steps = config["effective_batch_size"] // config["batch_size"]
     total_training_steps = (len(train_loader) // accum_steps) * config["epochs"]
-    num_warmup_steps = int(0.10 * total_training_steps / config["epochs"])
+    num_warmup_steps = int(0.10 * total_training_steps)
 
     # 1. Linear Warmup: from 1% of LR up to 100% of LR
     warmup_scheduler = LinearLR(optimizer, start_factor=0.01, end_factor=1.0, total_iters=num_warmup_steps)
@@ -122,7 +122,8 @@ def main(split="pretrain", checkpoint_path="src/checkpoints/best.pt"):
 
         avg_train_loss = train_epoch(model=model, train_loader=train_loader, val_loader=val_loader, 
                                      optimizer=optimizer, scheduler=scheduler, criterion=criterion, 
-                                     device=DEVICE, accum_steps=accum_steps, eval_interval=4000, model_type=config["model_type"])
+                                     device=DEVICE, accum_steps=accum_steps, eval_interval=2400, model_type=config["model_type"],
+                                     tokenizer=tokenizer)
         
         print("Running full test evaluation...")
         test_loss = evaluate(model=model, dataloader=test_loader, criterion=criterion, device=DEVICE, limit=None, model_type=config["model_type"])

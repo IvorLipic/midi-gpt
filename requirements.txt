@@ -6,3 +6,4 @@ tqdm==4.67.1
 wandb==0.26.1
 pandas==2.2.3
 transformers==5.9.0
+matplotlib>=3.8.0

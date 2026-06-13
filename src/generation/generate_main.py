@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from pathlib import Path
 
-from src.data.tokenizer_utils import get_tokenizer
+from src.data.tokenizer_utils import get_tokenizer, get_4_bar_prompt
 from src.data.detokenize import detokenize
 from src.generation.generate import generate
 from src.utils.checkpoint import load_checkpoint
@@ -13,17 +13,7 @@ from src.models.hf_remi_transformer import HFRemiGPT
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def get_4_bar_prompt(tokens, tokenizer):
-    bar_token_id = tokenizer.vocab["Bar_None"]
-    bar_positions = (tokens == bar_token_id).nonzero(as_tuple=True)[0]
-
-    if len(bar_positions) >= 5:
-        return tokens[:bar_positions[4]]
-    elif len(bar_positions) >= 4:
-        return tokens[:bar_positions[3]]
-    return tokens
-
-def main(checkpoint_path=None, top_k=40, n_samples=1, split="pretrain"):
+def main(checkpoint_path=None, top_k=40, top_p=1.0, temperature=1.0, n_samples=1, split="pretrain"):
     if checkpoint_path is None:
         checkpoint_path = "src/checkpoints/best.pt"
 
@@ -69,13 +59,12 @@ def main(checkpoint_path=None, top_k=40, n_samples=1, split="pretrain"):
 
     prompt = get_4_bar_prompt(tokens, tokenizer)
 
-    max_new_tokens = len(prompt)
     stem = Path(sample_path).stem
 
     for i in range(n_samples):
-        print(f"Sample {i}: prompt length {len(prompt)} tokens (from {sample_path.name}), generating {max_new_tokens} new tokens")
+        print(f"Sample {i}: prompt length {len(prompt)} tokens (from {sample_path.name}), generating up to 8 bars")
 
-        generated = generate(model, prompt, max_new_tokens, DEVICE, top_k=top_k)
+        generated = generate(model, prompt, tokenizer, DEVICE, temperature=temperature, top_k=top_k, top_p=top_p)
         print(f"Generated {len(generated)} tokens total")
 
         out_path = output_dir / f"generated_{stem}_{mode}_sample{i}.mid"
@@ -86,6 +75,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate MIDI from checkpoint")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint (default: src/checkpoints/best.pt)")
     parser.add_argument("--top-k", type=int, default=1, help="Top-k sampling")
+    parser.add_argument("--top-p", type=float, default=1.0, help="Top-p (nucleus) sampling")
+    parser.add_argument("--temperature", type=float, default=1.0, help="Sampling temperature")
     parser.add_argument("--n-samples", type=int, default=1, help="Number of samples to generate")
     parser.add_argument("--split", type=str, default="pretrain", help="Dataset split for prompt selection (default: pretrain)")
     args = parser.parse_args()
@@ -93,6 +84,8 @@ if __name__ == "__main__":
     main(
         checkpoint_path=args.checkpoint,
         top_k=args.top_k,
+        top_p=args.top_p,
+        temperature=args.temperature,
         n_samples=args.n_samples,
         split=args.split,
     )

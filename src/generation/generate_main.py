@@ -1,5 +1,5 @@
 ﻿import sys
-import random
+
 import torch
 import numpy as np
 from pathlib import Path
@@ -13,7 +13,7 @@ from src.models.hf_remi_transformer import HFRemiGPT
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def main(checkpoint_path=None, top_k=40, top_p=1.0, temperature=1.0, n_samples=1, split="pretrain"):
+def main(checkpoint_path, top_k, top_p, temperature, n_samples, prompt, single_track=False):
     if checkpoint_path is None:
         checkpoint_path = "src/checkpoints/best.pt"
 
@@ -22,11 +22,14 @@ def main(checkpoint_path=None, top_k=40, top_p=1.0, temperature=1.0, n_samples=1
         print("Run 'python -m src.training.pretrain' first to train a model.")
         sys.exit(1)
 
+    if prompt is None:
+        print("Error: --prompt is required")
+        sys.exit(1)
+
     checkpoint = load_checkpoint(checkpoint_path, device=DEVICE)
     config = checkpoint["config"]
     mode = config["mode"]
     model_type = config.get("model_type", mode)
-    split = config.get("split", split)
 
     tokenizer = get_tokenizer(mode)
 
@@ -44,48 +47,55 @@ def main(checkpoint_path=None, top_k=40, top_p=1.0, temperature=1.0, n_samples=1
     model.load_state_dict(checkpoint["model_state_dict"], strict=False)
     model.eval()
 
-    token_dir = Path("data/tokens") / f"{split}-{mode}" / "test" / "4-4"
-    token_files = sorted(token_dir.glob("*.npz"))
-    if not token_files:
-        print(f"No token files found in {token_dir}")
-        sys.exit(1)
-
-    output_dir = Path("data/test")
+    output_dir = Path("data/generations")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    sample_path = random.choice(token_files)
-    data = np.load(sample_path)
-    tokens = torch.from_numpy(data["tokens"]).long()
+    prompt_path = Path(prompt)
+    stem = prompt_path.stem
 
-    prompt = get_4_bar_prompt(tokens, tokenizer)
+    if prompt_path.suffix.lower() in (".mid", ".midi"):
+        from symusic import Score
+        score = Score(str(prompt_path))
+        all_tokens = tokenizer(score)
+        tokens = torch.tensor(all_tokens[0], dtype=torch.long)
+    elif prompt_path.suffix.lower() == ".npz":
+        data = np.load(prompt_path)
+        tokens = torch.from_numpy(data["tokens"]).long()
+    else:
+        print(f"Unsupported prompt file: {prompt_path} (use .mid, .midi, or .npz)")
+        sys.exit(1)
 
-    stem = Path(sample_path).stem
+    prompt_tokens = get_4_bar_prompt(tokens, tokenizer)
 
     for i in range(n_samples):
-        print(f"Sample {i}: prompt length {len(prompt)} tokens (from {sample_path.name}), generating up to 8 bars")
+        print(f"Sample {i}: prompt length {len(prompt_tokens)} tokens (from {prompt_path.name}), generating up to 8 bars")
 
-        generated = generate(model, prompt, tokenizer, DEVICE, temperature=temperature, top_k=top_k, top_p=top_p)
+        generated = generate(model, prompt_tokens, tokenizer, DEVICE, temperature=temperature, top_k=top_k, top_p=top_p)
         print(f"Generated {len(generated)} tokens total")
 
         out_path = output_dir / f"generated_{stem}_{mode}_sample{i}.mid"
-        detokenize(generated, tokenizer, out_path, prompt_tokens=prompt)
+        detokenize(generated, tokenizer, out_path, prompt_tokens=prompt_tokens, include_prompt_track=not single_track)
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Generate MIDI from checkpoint")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint (default: src/checkpoints/best.pt)")
-    parser.add_argument("--top-k", type=int, default=1, help="Top-k sampling")
+    parser.add_argument("--prompt", type=str, required=True, help="Path to .mid, .midi, or .npz file to use as prompt")
+    parser.add_argument("--top-k", type=int, default=None, help="Top-k sampling")
     parser.add_argument("--top-p", type=float, default=1.0, help="Top-p (nucleus) sampling")
     parser.add_argument("--temperature", type=float, default=1.0, help="Sampling temperature")
-    parser.add_argument("--n-samples", type=int, default=1, help="Number of samples to generate")
-    parser.add_argument("--split", type=str, default="pretrain", help="Dataset split for prompt selection (default: pretrain)")
+    parser.add_argument("--n-samples", type=int, default=5, help="Number of samples to generate")
+    parser.add_argument("--single-track", action="store_true", help="Output only the generated track (omit the prompt track)")
     args = parser.parse_args()
 
     main(
         checkpoint_path=args.checkpoint,
+        prompt=args.prompt,
         top_k=args.top_k,
         top_p=args.top_p,
         temperature=args.temperature,
         n_samples=args.n_samples,
-        split=args.split,
+        single_track=args.single_track,
     )
+
+# python -m src.generation.generate_main --prompt data/handcrafted_test_midis/chords_bass_melody_A#min.mid --single-track

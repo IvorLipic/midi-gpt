@@ -5,7 +5,7 @@ from symusic import Score, Track
 
 from src.data.tokenizer_utils import get_tokenizer
 
-def detokenize(tokens, tokenizer, output_path, prompt_tokens=None):
+def detokenize(tokens, tokenizer, output_path, prompt_tokens=None, include_prompt_track=True):
     if isinstance(tokens, torch.Tensor):
         tokens = tokens.cpu().numpy()
     if prompt_tokens is not None and isinstance(prompt_tokens, torch.Tensor):
@@ -23,7 +23,7 @@ def detokenize(tokens, tokenizer, output_path, prompt_tokens=None):
     if isinstance(score, list):
         score = score[0]
 
-    if prompt_tokens is not None:
+    if prompt_tokens is not None and include_prompt_track:
         if prompt_tokens.ndim == 1:
             prompt_list = [prompt_tokens.tolist()]
         else:
@@ -40,6 +40,8 @@ def detokenize(tokens, tokenizer, output_path, prompt_tokens=None):
         prompt_score.tracks[0].name = "Prompt"
         combined.tracks.append(prompt_score.tracks[0])
         score = combined
+    elif prompt_tokens is not None:
+        score.tracks[0].name = "Generated"
 
     if isinstance(score, Score):
         score.dump_midi(output_path)

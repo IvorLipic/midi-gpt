@@ -62,7 +62,8 @@ $RECYCLE.BIN/
 *.vsix
 
 # Dataset
-/data/
+/data/GigaMIDI
+/data/tokens
 
 # TeX stuff
 /thesis/

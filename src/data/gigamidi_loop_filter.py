@@ -602,10 +602,4 @@ python -m src.data.gigamidi_loop_filter --mode compute --enriched-csv ./data/Gig
 
 # Pre-training Dataset (Filtered to 732258 files, train: 585013 files, test: 74145 files, validation: 73100 files)
 python -m src.data.gigamidi_loop_filter --mode filter --enriched-csv ./data/GigaMIDI/filtered_loops_v1/enriched_manifest.csv --output-root ./data/GigaMIDI/filtered_loops_v1/pretrain --filter empty_bar_rate:0.0:0.0 --filter empty_beat_rate::0.4 --filter polyphony:1.0:5.5 --filter pitch_range:4.0:48.0 --filter n_pitches_used:4.0:35.0 --filter scale_consistency:0.90: --filter groove_consistency_bar:0.90: --filter is_identical_4bar_loop:0:0
-
-# SFT Monophonic Source (Filtered to 338496 files, train: 270581 files, test: 34392 files, validation: 33523 files)
-python -m src.data.gigamidi_loop_filter --mode filter --enriched-csv ./data/GigaMIDI/filtered_loops_v1/enriched_manifest.csv --output-root ./data/GigaMIDI/filtered_loops_v1/sft_mono --filter empty_bar_rate:0.0:0.0 --filter empty_beat_rate::0.4 --filter polyphony:1.0:1.05 --filter pitch_range:4.0:48.0 --filter n_pitches_used:4.0:35.0 --filter scale_consistency:0.95: --filter groove_consistency_bar:0.90: --filter is_identical_4bar_loop:0:0 --filter polyphony_rate:0.0:0.02 
-
-# SFT Polyphonic Source (Filtered to 151174 files, train: 120802 files, test: 15260 files, validation: 15112 files)
-python -m src.data.gigamidi_loop_filter --mode filter --enriched-csv ./data/GigaMIDI/filtered_loops_v1/enriched_manifest.csv --output-root ./data/GigaMIDI/filtered_loops_v1/sft_poly --filter empty_bar_rate:0.0:0.0 --filter empty_beat_rate::0.4 --filter polyphony:2.0:5.0 --filter pitch_range:4.0:48.0 --filter n_pitches_used:4.0:35.0 --filter scale_consistency:0.95: --filter groove_consistency_4bar:0.90: --filter is_identical_4bar_loop:0:0 --filter polyphony_rate:0.50:1.0
 '''

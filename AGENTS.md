@@ -1,12 +1,12 @@
 ﻿# midi-gpt — Agent Guide
 
 ## Project
-GPT-style MIDI generator: takes a 4-bar prompt, generates a 4-bar continuation (8 bars total). Output MIDI has 2 tracks: "Generated" and "Prompt".
+GPT-style MIDI generator: takes a 4-bar prompt, generates a 4-bar continuation (8 bars total). Output MIDI has 2 tracks ("Generated" + "Prompt") by default, or 1 track ("Generated") with `--single-track`.
 Tokenization mode: **REMI** (single-token).
 Data lives in `data/GigaMIDI/filtered_loops_v1/{pretrain|sft_mono|sft_poly}/{train|test|validation}/4-4/*.mid`.
 
 ## Pipeline & Commands
-Run from repo root. Python 3.13 confirmed. Install deps first:
+Run from repo root. Python 3.12 confirmed. Install deps first:
 ```
 pip install -r requirements.txt
 ```
@@ -29,16 +29,16 @@ pip install -r requirements.txt
    ```
    python -m src.training.pretrain [--split pretrain]
    ```
-   Config hardcoded in code: model_type=hf_remi (default), batch_size=24, effective_batch_size=48 (gradient accumulation ×2), lr=1e-4, epochs=5, mode=remi. W&B project `midi-gpt` (required — `wandb.init()` called unconditionally).
+   Config hardcoded in code: model_type=hf_remi (default), batch_size=24, effective_batch_size=48 (gradient accumulation ×2), lr=1e-4, epochs=1, mode=remi. W&B project `midi-gpt` (required — `wandb.init()` called unconditionally).
    Uses `torch.compile` + AdamW `fused=True`.
    LR schedule: linear warmup (10% of steps) → cosine decay to 10% of lr.
    Checkpoints saved to `src/checkpoints/` every epoch + `best.pt` for lowest loss.
 
 4. **Generate MIDI** from checkpoint (picks a random test file as prompt):
    ```
-   python -m src.generation.generate_main --checkpoint src/checkpoints/best.pt --top-k 1 --n-samples 1 [--split pretrain]
+   python -m src.generation.generate_main --checkpoint src/checkpoints/best.pt --top-k 1 --n-samples 1 --prompt path/to/file.mid
    ```
-   Output: `data/test/generated_{stem}_{mode}_sample{i}.mid`. Generation stops at 9 bar tokens (≈4-bar continuation, max 1536 total).
+   Output: `data/generations/generated_{stem}_{mode}_sample{i}.mid`. Generation stops at 9 bar tokens (≈4-bar continuation, max 1536 total). Use `--single-track` to omit the prompt track from the output MIDI.
 
 ## Architecture
 - `src/data/gigamidi_loop_extractor.py` — Reads filtered metadata CSV, validates 8-bar loops (32-beat ±0.5, single TS with denom=4, non-drum, ≥10 notes), extracts to `data/GigaMIDI/extracted_loops_v1/`. Parallel via `mp.Pool`.
@@ -68,7 +68,7 @@ pip install -r requirements.txt
 - **bfloat16 AMP** in trainer — requires compatible GPU (CUDA). Falls back otherwise.
 - **AdamW `fused=True`** in optimizer — requires CUDA.
 - **`silence_cpp()`** wraps `Score()` calls in tokenization to suppress symusic C-level output.
-- **No `__init__.py` files in `src/`** — Python 3.13 implicit namespace packages work fine.
+- **No `__init__.py` files in `src/`** — Python 3.12 implicit namespace packages work fine.
 - **No test/lint/typecheck infrastructure** — no CI, no pytest, no mypy, no ruff. Only validation is running scripts directly.
 - `.gitignore` excludes `/data/`, `wandb/`, and `src/checkpoints/*.pt` (directory tracked via `.gitkeep`).
 - `configs/` directory does not exist; all training config is hardcoded in `pretrain.py`.

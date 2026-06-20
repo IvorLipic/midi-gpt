@@ -115,7 +115,7 @@ If you train locally, `src/utils/extract_model_checkpoint.py` can strip full che
 
 ## Architecture Notes
 
-- **Tokenization**: REMI, config: beat_res 16th notes, 32 velocities, no chords/rests/tempos/time-signatures/programs/drums
+- **Tokenization**: REMI, config: beat_res 64th notes, 32 velocities, no chords/rests/tempos/time-signatures/programs/drums
 - **Model**: HuggingFace GPT2LMHeadModel with learned positional embeddings (`GPTStyleEmbedding`), Pre-LN (`norm_first=True`), final LayerNorm before LM head
 - **Pad token = 0** everywhere: loss `ignore_index=0`, collate `pad_id=0`, key padding mask `(input_ids == 0)`
 - **Bucketed padding**: sequence lengths rounded up to `{64, 128, 256, 512, 1024, 1536}` to limit `torch.compile` recompilations

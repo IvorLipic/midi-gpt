@@ -43,7 +43,7 @@ Run `src/data/GigaMIDI_Analysis_and_Filtering.ipynb`. It reads `data/GigaMIDI/Fi
 python -m src.data.gigamidi_loop_extractor
 ```
 
-Parallel extraction (can take hours on 1.3M files). Validates loops (32 beats ±0.5, single 4/4 time signature, non-drum tracks, ≥10 notes) and outputs to `data/GigaMIDI/extracted_loops_v1/{train,test,validation}/{4-4,2-4,unknown}/*.mid`.
+Parallel extraction (can take hours). Validates loops (32 beats ±0.5, single 4/4 time signature, non-drum tracks, ≥10 notes) and outputs to `data/GigaMIDI/extracted_loops_v1/{train,test,validation}/{4-4,2-4,unknown}/*.mid`.
 
 ### c) Filter by quality metrics
 
@@ -96,7 +96,7 @@ python -m src.training.pretrain --split pretrain
 python -m src.generation.generate_main \
     --prompt data/handcrafted_test_midis/chords_bass_melody_Amin.mid \
     --checkpoint src/checkpoints/best.pt \
-    --top-k 1 \
+    --top-k 12 \
     --top-p 0.92 \
     --temperature 0.9
 ```
